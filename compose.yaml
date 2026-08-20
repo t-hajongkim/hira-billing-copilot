@@ -1,14 +1,12 @@
 services:
   postgres:
-    # 표준 이미지에 init.sql 을 부어 세운다. 우리 이미지를 따로 만들지 않는다.
-    # \copy 는 psql 의 cwd(/) 기준이라 ./db 를 /db 에 걸어 두면 경로가 맞는다.
-    image: postgres:17-alpine
-    volumes:
-      - ./db:/db:ro
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    # 공개 이미지라 로그인 없이 받는다. 읽기 역할의 비밀번호만 넣어 주면 된다.
+    image: ghcr.io/t-hajongkim/hira-billing-copilot-db:latest
+    pull_policy: always
     environment:
       POSTGRES_DB: billing
       POSTGRES_USER: billing
       POSTGRES_PASSWORD: billing
+      LLM_DB_PASSWORD: ${LLM_DB_PASSWORD:?LLM_DB_PASSWORD 를 정해서 넣으세요}
     ports:
       - "5432:5432"

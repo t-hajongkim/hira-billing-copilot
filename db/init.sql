@@ -52,10 +52,10 @@ CREATE TABLE public.treatment_claim (
     created_at               timestamp NOT NULL
 );
 
--- \copy 는 psql 이 파일을 읽어 보내는 것이다. 서버 안에 파일이 없어도 된다 —
--- 그래서 이 스크립트를 표준 postgres 컨테이너에 그대로 부어 넣을 수 있다.
-\copy public.patient_master FROM 'db/data/patient_master.csv' WITH (FORMAT csv, HEADER, ENCODING 'UTF8')
-\copy public.treatment_claim FROM 'db/data/treatment_claim.csv' WITH (FORMAT csv, HEADER, ENCODING 'UTF8')
+COPY public.patient_master FROM '/data/patient_master.csv'
+    WITH (FORMAT csv, HEADER, ENCODING 'UTF8');
+COPY public.treatment_claim FROM '/data/treatment_claim.csv'
+    WITH (FORMAT csv, HEADER, ENCODING 'UTF8');
 
 CREATE INDEX ON public.treatment_claim (patient_id, treatment_date);
 
@@ -110,38 +110,11 @@ REVOKE ALL ON ALL TABLES IN SCHEMA llm    FROM PUBLIC;
 REVOKE ALL ON SCHEMA public               FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 
--- ── AI 가 쓸 롤 ──────────────────────────────────────────────────────────
--- 비밀번호를 시크릿으로 두지 않는다.
--- llm_reader 는 llm.claim 뷰 하나만 읽는다 — 비밀번호를 알아도 더 가져갈 게 없다.
--- 경계는 비밀번호가 아니라 뷰와 권한이고, DB 는 워크플로 실행 중에만 뜨는
--- localhost 전용 서비스 컨테이너다.
--- 실제 병원 데이터를 넣는다면 이 값을 시크릿으로 바꾸고 포트를 열지 않는다.
+-- 여기까지가 데이터와 표면이다. 읽을 역할(llm_reader)과 그 권한, 그리고 권한을
+-- 확인하는 게이트는 02-create-llm-role.sh 에 있다 — 비밀번호가 시크릿으로 들어오고,
+-- SQL 파일은 환경변수를 못 읽기 때문이다.
 
-CREATE ROLE llm_reader LOGIN PASSWORD 'llm-readonly';
-
-REVOKE ALL ON SCHEMA public               FROM llm_reader;
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM llm_reader;
-
-GRANT USAGE ON SCHEMA llm TO llm_reader;
-
--- patient_id 만 빼고 준다. 열을 손으로 나열하면 열이 늘 때 빠뜨린다 —
--- 빠뜨리면 조용히 새는 쪽으로 틀린다. 그래서 뷰 정의에서 뽑아 쓴다.
-DO $grant$
-DECLARE cols text;
-BEGIN
-    SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
-      INTO cols FROM information_schema.columns
-     WHERE table_schema = 'llm' AND table_name = 'claim'
-       AND column_name <> 'patient_id';
-    EXECUTE format('GRANT SELECT (%s) ON llm.claim TO llm_reader', cols);
-END $grant$;
-
-ALTER ROLE llm_reader SET search_path = llm, pg_catalog;
-ALTER ROLE llm_reader SET default_transaction_read_only = on;
-ALTER ROLE llm_reader SET statement_timeout = '10s';
-
--- 빌드 게이트. 하나라도 어긋나면 이미지가 만들어지지 않는다.
--- 런타임 테스트만 두면 이미 나간 이미지를 확인할 뿐이다.
+-- 데이터 게이트. 하나라도 어긋나면 이미지가 만들어지지 않는다.
 DO $$
 DECLARE n int;
 BEGIN
@@ -158,18 +131,10 @@ BEGIN
          'resident_id_token','treatment_id','encounter_id');
     IF n > 0 THEN RAISE EXCEPTION '게이트 B — 식별 열이 뷰에 있다: %개', n; END IF;
 
-    -- patient_id 는 뷰에 있다(조회 키). 대신 llm_reader 가 못 읽어야 한다.
-    IF has_column_privilege('llm_reader', 'llm.claim', 'patient_id', 'SELECT') THEN
-        RAISE EXCEPTION '게이트 C — llm_reader 가 환자 ID 를 읽을 수 있다';
-    END IF;
-    IF NOT has_column_privilege('llm_reader', 'llm.claim', 'age', 'SELECT') THEN
-        RAISE EXCEPTION '게이트 C — llm_reader 가 진료 열을 못 읽는다';
-    END IF;
-
     -- 나이는 있고 생년월일은 없어야 한다.
     SELECT count(*) INTO n FROM llm.claim WHERE age IS NULL OR age < 0 OR age > 120;
     IF n > 0 THEN RAISE EXCEPTION '게이트 D — 나이가 이상한 행 %건', n; END IF;
 
     SELECT count(*) INTO n FROM llm.claim;
-    RAISE NOTICE '경계 게이트 통과 - 뷰 %건, 환자 ID 는 llm_reader 에게 닫혀 있다', n;
+    RAISE NOTICE '데이터 게이트 통과 - 뷰 %건', n;
 END $$;

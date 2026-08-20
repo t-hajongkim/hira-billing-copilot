@@ -28,13 +28,15 @@ jobs:
 
     services:
       postgres:
-        # 표준 이미지를 쓴다. 우리 이미지를 GHCR 에 올리면 참조에 계정 이름이 들어가는데,
-        # 대문자가 섞인 계정에서는 도커가 그 참조를 거부한다. 계정 이름은 바꿀 수 없다.
-        image: postgres:17-alpine
+        # 이미지가 public 이라 자격증명 없이 익명으로 받는다. 자기 계정으로 로그인하면
+        # 복사한 저장소에서 패키지 접근이 거부되어 오히려 실패한다.
+        image: ghcr.io/t-hajongkim/hira-billing-copilot-db:latest
         env:
           POSTGRES_DB: billing
           POSTGRES_USER: billing
           POSTGRES_PASSWORD: billing
+          # 읽기 역할의 비밀번호는 이미지에 없다. 실행할 때 들어온다.
+          LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
         ports:
           - 5432:5432
         options: >-
@@ -47,18 +49,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
-      - name: 데이터베이스 세우기
-        env:
-          PGPASSWORD: billing
-        run: |
-          set -euo pipefail
-          psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -U billing -d billing -f db/init.sql
-          echo "환자/진료 데이터와 경계를 세웠습니다."
-
       # 경계는 세울 때마다 확인한다. 예전에는 이미지를 올리기 전에 한 번 봤는데,
       # 이미지를 없앴으니 이 자리에서 본다 — 오히려 매 실행마다 보게 된다.
       - name: 경계 검사
-        run: bash db/test-access.sh
+        env:
+          LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
+        run: bash db/test-access.sh --local
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -67,12 +63,15 @@ jobs:
         run: python tools/build_dashboard.py --check
 
       - name: 대시보드 굽기
+        env:
+          # 비밀번호는 DSN 이 아니라 여기로 넘긴다 - 특수문자가 섞여도 안전하다.
+          PGPASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
         # 청구 데이터는 비식별 뷰(llm_reader)로 읽는다.
         # --app-dsn 은 환자 ID 범위(P00001 ~ P00050) 한 줄만 읽는다 —
         # 검색창에 무엇을 넣을지 알려 주려는 것이고, 진료 내용과는 잇히지 않는다.
         run: |
           python tools/build_dashboard.py \
-            --dsn "postgresql://llm_reader:llm-readonly@127.0.0.1:5432/billing" \
+            --dsn "postgresql://llm_reader@127.0.0.1:5432/billing" \
             --app-dsn "postgresql://billing:billing@127.0.0.1:5432/billing"
 
       - name: 자립성 확인

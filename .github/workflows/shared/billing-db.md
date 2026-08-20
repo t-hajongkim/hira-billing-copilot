@@ -14,13 +14,15 @@ tools:
   cli-proxy: true
 services:
   postgres:
-    # 표준 이미지를 쓴다. 우리 이미지를 GHCR 에 올려 쓰면 참조에 계정 이름이 들어가는데,
-    # 대문자가 섞인 계정(WhoAmI125)에서는 도커가 그 참조를 거부한다. 계정 이름은 못 바꾼다.
-    image: postgres:17-alpine
+    # 이미지가 public 이라 자격증명 없이 익명으로 받는다. 자기 계정으로 로그인하면
+    # 복사한 저장소에서 패키지 접근이 거부되어 오히려 실패한다.
+    image: ghcr.io/t-hajongkim/hira-billing-copilot-db:latest
     env:
       POSTGRES_DB: billing
       POSTGRES_USER: billing
       POSTGRES_PASSWORD: billing
+      # 읽기 역할의 비밀번호는 이미지에 없다. 실행할 때 들어온다.
+      LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
     ports:
       - 5432:5432
     options: >-
@@ -31,13 +33,6 @@ services:
 steps:
   - name: Install PostgreSQL client
     run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-  - name: 데이터베이스 세우기
-    env:
-      PGPASSWORD: billing
-    run: |
-      set -euo pipefail
-      psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -U billing -d billing -f db/init.sql
-      echo "환자/진료 데이터와 경계를 세웠습니다."
 mcp-scripts:
   query-billing-db:
     description: Run one read-only SELECT or WITH query against the de-identified llm.claim view.
@@ -54,7 +49,7 @@ mcp-scripts:
         -h 127.0.0.1 -U llm_reader -d billing \
         --command "$INPUT_SQL"
     env:
-      PGPASSWORD: llm-readonly
+      PGPASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
 ---
 
 ## 환자 / 진료 데이터베이스

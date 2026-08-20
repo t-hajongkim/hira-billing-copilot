@@ -68,20 +68,24 @@ AI가 보는 것은 `llm.claim` 뷰 하나입니다. 이름·생년월일·연�
 실습으로 처음 돌려보신다면 [instructions.md](instructions.md)를 따라가세요.
 
 이 저장소를 템플릿으로 새 저장소를 만들면 **확인 화면이 저절로 만들어집니다.**
-첫 커밋이 워크플로를 깨우기 때문입니다. 남는 설정은 두 가지입니다.
+첫 커밋이 워크플로를 깨우기 때문입니다. 남는 설정은 세 가지입니다.
 
-1. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**
+1. Settings → Secrets and variables → Actions → **New repository secret**
+   이름 `LLM_DB_PASSWORD`, 값은 아무 문자열
+2. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**
    (규정 수집 PR에 필요합니다)
-2. Settings → 사이드바 **Code and automation** → **Pages** →
+3. Settings → 사이드바 **Code and automation** → **Pages** →
    **Build and deployment** 아래 **Source** 를 **GitHub Actions** 로 (화면을 웹으로 열 때만)
 
-2번은 저장소 설정이라 워크플로가 대신 켜 줄 수 없습니다. 켜지 않아도 `site/index.html`을
+3번은 저장소 설정이라 워크플로가 대신 켜 줄 수 없습니다. 켜지 않아도 `site/index.html`을
 내려받아 더블클릭하면 같은 화면이 열립니다.
 
-데이터베이스는 표준 `postgres:17-alpine` 컨테이너에 `db/init.sql` 을 부어 **실행할 때마다**
-세웁니다. 우리 이미지를 따로 만들어 올리지 않습니다 — 그러면 주소에 계정 이름이 들어가는데,
-대문자가 섞인 계정에서는 도커가 그 주소를 거부하기 때문입니다. 경계 게이트도 매 실행마다
-같이 돕니다.
+데이터베이스는 원본 저장소가 올려 둔 **공개 이미지**를 자격증명 없이 받아 씁니다.
+복사본이 이미지를 만들 필요가 없고, 주소에 각자의 계정 이름이 들어가지도 않습니다 —
+대문자가 섞인 계정에서는 도커가 그런 주소를 거부하기 때문입니다.
+
+읽기 역할(`llm_reader`)의 비밀번호는 **이미지에 들어 있지 않습니다.** 공개 이미지에 박아
+두면 그 값이 그대로 공개됩니다. 컨테이너가 뜰 때 1번의 시크릿으로 만들어집니다.
 
 ### 진료비 확인 요청하기
 
@@ -99,6 +103,7 @@ AI가 보는 것은 `llm.claim` 뷰 하나입니다. 이름·생년월일·연�
 ### 로컬에서 확인
 
 ```bash
+export LLM_DB_PASSWORD=아무-문자열
 docker compose up -d
 ./db/test-access.sh --compose              # 경계가 서 있는지 확인
 python3 tools/build_dashboard.py --check   # 판정 로직 자체 점검
@@ -115,8 +120,9 @@ python3 tools/render_report.py --check     # 보고서 변환기 자체 점검
 │   ├── billing-intake.yml            # 조회 후 식별정보 제거 → 판단 호출
 │   ├── billing-review.md             # 받은 진료행으로 판단 → 보고서
 │   ├── build-dashboard.yml           # 확인 화면 빌드 후 Pages 배포
+│   ├── publish-db-image.yml          # DB 이미지 게시 (원본 저장소에서만)
 │   └── sweep-runs.yml                # 지난 요청 실행 만료 (30분 / 7일)
-├── db/                               # init.sql (뷰 · 권한 · 게이트) + 합성 데이터
+├── db/                               # 이미지 · init.sql · 역할 스크립트 · 합성 데이터
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
 ├── tools/
 │   ├── fetch_notices.py              # 심평원·복지부 공고 수집
