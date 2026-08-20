@@ -1,0 +1,83 @@
+# 청구 현황 대시보드를 굽는다.
+#
+# GitHub Pages 를 쓰지 않는다 — private 레포에서 Pages 를 켜도 사이트 자체는
+# 인터넷에 공개된다. 청구 데이터를 추측 가능한 URL 로 내보낼 이유가 없다.
+# 대신 site/index.html 을 커밋하고, 각자 클론에서 더블클릭해 연다.
+# 파일 하나로 완결돼 있어 fetch 도 외부 요청도 없다.
+name: build-dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rules/**"
+      - "db/data/**"
+      - "site/dashboard.template.html"
+      - "tools/build_dashboard.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: ghcr.io/t-hajongkim/hira-billing-db:latest
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_DB: billing
+          POSTGRES_USER: billing
+          POSTGRES_PASSWORD: billing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U billing -d billing"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 빌드 로직 점검
+        run: python tools/build_dashboard.py --check
+
+      - name: 대시보드 굽기
+        run: |
+          python tools/build_dashboard.py \
+            --dsn "postgresql://llm_reader:llm-readonly@127.0.0.1:5432/billing"
+
+      - name: 자립성 확인
+        run: |
+          set -e
+          body=$(sed '1,20d' site/index.html)
+          for pat in 'fetch(' 'type="module"' 'import('; do
+            if printf '%s' "$body" | grep -qF "$pat"; then
+              echo "::error::대시보드가 자립성을 잃었습니다: $pat"
+              exit 1
+            fi
+          done
+          if printf '%s' "$body" | grep -qE '(src|href)="https?://'; then
+            echo "::error::외부 리소스를 참조합니다."
+            exit 1
+          fi
+          echo "자립성 OK — 오프라인에서 열립니다."
+
+      - name: 변경 있으면 커밋
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/index.html
+          git diff --cached --quiet || git commit -m "청구 대시보드 재생성"
+          git push
