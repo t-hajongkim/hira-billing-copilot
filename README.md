@@ -13,7 +13,7 @@ AI는 데이터베이스에 접속하지 않습니다. 환자 식별은 SQL 조�
 flowchart TD
     subgraph SETUP["기본 설정 · 사용자 개입 없음"]
         IMG["DB 이미지<br/>환자 50명 · 진료 50건"]
-        VIEW["확인용 View<br/>llm.claim]
+        VIEW["확인용 View<br/>llm.claim"]
         SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"]
         IMG --> VIEW
         SYNC --> KB["규정 Knowledge Base<br/>공고일 · 시행일 · 대상 코드"]
