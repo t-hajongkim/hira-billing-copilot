@@ -45,6 +45,10 @@
   .topbar input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
   .topbar input.q{flex:1;min-width:110px;max-width:320px}
   .topbar input.pid{width:112px;font-variant-numeric:tabular-nums;text-transform:uppercase}
+  .topbar select{height:34px;border:1.5px solid var(--line);border-radius:11px;padding:0 8px;
+    font:inherit;font-size:12.5px;font-weight:700;background:#fff;color:inherit;cursor:pointer;
+    outline:none}
+  .topbar select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
   .topbar .sep{flex:1;min-width:8px}
   .topbar button{height:34px;border-radius:11px;border:1.5px solid var(--line);cursor:pointer;
     font:inherit;font-size:12.5px;font-weight:750;padding:0 13px;background:#fff;color:inherit;
@@ -176,6 +180,14 @@
   <span class="sep"></span>
   <input class="pid" id="pid" autocomplete="off" maxlength="6" placeholder="P00013"
          aria-label="환자 ID">
+  <select id="model" aria-label="판단에 쓸 모델" title="판단에 쓸 모델">
+    <option value="auto">모델 auto</option>
+    <option value="sonnet">sonnet</option>
+    <option value="opus">opus</option>
+    <option value="haiku">haiku</option>
+    <option value="gpt-5">gpt-5</option>
+    <option value="gemini-pro">gemini-pro</option>
+  </select>
   <button class="go" id="go">진료비 확인</button>
   <button id="cfgOpen" title="이 브라우저에 저장할 GitHub 토큰">토큰</button>
   <span class="msg" id="msg"></span>
@@ -447,12 +459,13 @@
                  "Authorization": "Bearer " + t,
                  "X-GitHub-Api-Version": "2022-11-28",
                  "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: META.ref || "main", inputs: { patient_id: v } })
+      body: JSON.stringify({ ref: META.ref || "main",
+                             inputs: { patient_id: v, model: $("model").value } })
     }).then(function(r){
       busy(false);
       if(r.status === 204){
         $("pid").value = "";
-        say("요청했습니다. 결과는 실행의 Artifacts 에서 내려받으세요.");
+        say("요청했습니다 (모델 " + $("model").value + "). 결과는 실행의 Artifacts 에서 내려받으세요.");
         window.open(base() + "/actions/workflows/billing-intake.yml", "_blank", "noopener");
         return;
       }
