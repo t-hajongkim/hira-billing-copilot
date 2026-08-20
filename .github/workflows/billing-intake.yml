@@ -127,7 +127,7 @@ jobs:
           emit ok 1
           emit count "$N"
           emit treatment_date "${TREATMENT_DATE:-}"
-          printf 'claims<<CLAIMS_EOF\n%s\nCLAIMS_EOF\n' "$CLAIMS" >> "$GITHUB_OUTPUT"
+          printf %s "$CLAIMS" > "$RUNNER_TEMP/claims.json"
           echo "진료 $N 건을 비식별로 뽑았습니다 (진료일 ${TREATMENT_DATE:-전체})"
 
           # 무엇을 뽑았는지 요약에 적는다. 진료일과 수가코드뿐이고 식별값은 없다.
@@ -148,8 +148,8 @@ jobs:
         if: steps.query.outputs.ok == '1'
         env:
           GH_TOKEN: ${{ github.token }}
-          # 셸에 직접 끼워 넣지 않는다. 값 안의 따옴표가 명령을 부순다.
-          CLAIMS: ${{ steps.query.outputs.claims }}
+          # 진료내역은 파일로 건넨다. env 로 두면 러너가 스텝을 시작할 때
+          # 그 값을 로그에 통째로 찍는다 - 임상 기록을 90일 남길 이유가 없다.
         run: |
           set -euo pipefail
           # auto 는 gh aw 에서 "지정 안 함" 이다. 빈 값으로 넘겨야 Copilot 이 고른다.
@@ -157,7 +157,7 @@ jobs:
           [ "$MODEL" = "auto" ] && MODEL=""
 
           gh workflow run billing-review.lock.yml --repo "${{ github.repository }}" \
-            -f claims="$CLAIMS" \
+            -f claims="$(cat "$RUNNER_TEMP/claims.json")" \
             -f treatment_date="${{ steps.query.outputs.treatment_date }}" \
             -f model="$MODEL"
 

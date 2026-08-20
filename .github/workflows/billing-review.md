@@ -39,11 +39,11 @@ permissions:
   copilot-requests: write
 steps:
   - name: 진료내역을 파일로 둔다
-    env:
-      CLAIMS: ${{ inputs.claims }}
     run: |
       set -euo pipefail
-      printf '%s' "$CLAIMS" > claims.json
+      # env 로 받지 않는다. 러너가 스텝 시작할 때 env 목록을 로그에 그대로 찍어서
+      # 진료내역 전문이 남는다 - 환자 ID 를 env 에서 뺀 것과 같은 이유다.
+      jq -r '.inputs.claims' "$GITHUB_EVENT_PATH" > claims.json
       # 여기서 한 번 더 본다. 식별값이 섞여 들어오면 에이전트에 닿기 전에 세운다.
       if grep -qE 'P[0-9]{5}' claims.json; then
         echo "::error::진료내역에 환자 ID 가 들어 있습니다"; exit 1
