@@ -23,7 +23,7 @@ flowchart TD
 |---|---|---|---|
 | 0-1. 규정 동기화 | `hira-rule-sync.md` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
 | 0-2. 환자/진료 DB | `db/` | — | GHCR 이미지 |
-| 1~3. 청구 판단 | *(다음 단계에서 구현)* | 이슈 등록 | 이슈 댓글 |
+| 1~3. 청구 판단 | `billing-intake.yml` → `billing-review.md` | 이슈 등록 후 담당자 지정 | 이슈 댓글 |
 
 각 단계는 PR 을 만들 뿐 스스로 머지하지 않습니다. **머지가 곧 담당자의 확인입니다.**
 
@@ -74,8 +74,8 @@ billing=> CREATE TABLE probe(x int);
 ERROR:  cannot execute CREATE TABLE in a read-only transaction
 ```
 
-이 다섯 가지는 `db/assert-boundary.sql` 이 **이미지 빌드 중에** 확인합니다.
-경계가 열린 이미지는 만들어지지 않습니다.
+이 다섯 가지는 `db/init.sql` 끝의 게이트가 **이미지 빌드 중에** 확인합니다.
+경계가 열린 이미지는 만들어지지 않습니다. `db/test-access.sh` 가 배포 전에 한 번 더 봅니다.
 
 ## 규정을 덮어쓰지 않는 이유
 
@@ -130,6 +130,8 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │   └── workflows/
 │       ├── shared/billing-db.md      # DB 서비스 · query-billing-db 도구 (공용)
 │       ├── hira-rule-sync.md         # 0-1: 매일 아침 규정 동기화
+│       ├── billing-intake.yml        # 1~2: 이슈 → 환자ID를 토큰으로 → 호출
+│       ├── billing-review.md         # 3: 청구 판단 → 이슈 댓글
 │       └── publish-db-image.yml      # DB 이미지 → GHCR
 ├── db/
 │   ├── Dockerfile
@@ -137,6 +139,7 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │   ├── test-access.sh                # 경계 검사 (compose 또는 이미지 대상)
 │   └── data/                         # 환자 50명 · 진료 50건 (합성, 실제 수가코드)
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
+├── tools/fetch_notices.py            # 심평원 공지 수집 (방화벽 밖 steps 에서 실행)
 └── compose.yaml
 ```
 
