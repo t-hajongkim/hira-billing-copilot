@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: ghcr.io/t-hajongkim/hira-billing-db:latest
+    # GHCR_OWNER 를 본인 GitHub 아이디로 두고 쓴다.
+    # 이미지는 각자 자기 GHCR 에 올라간다 — 남의 패키지에 접근 권한을 받을 일이 없다.
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER 를 본인 GitHub 아이디로 설정하세요}/hira-billing-db:latest
     pull_policy: always
     environment:
       POSTGRES_DB: billing

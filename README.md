@@ -24,6 +24,7 @@ flowchart TD
 | 0-1. 규정 동기화 | `hira-rule-sync.md` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
 | 0-2. 환자/진료 DB | `db/` | — | GHCR 이미지 |
 | 1~3. 청구 판단 | `billing-intake.yml` → `billing-review.md` | 이슈 등록 후 담당자 지정 | 이슈 댓글 |
+| 현황 대시보드 | `build-dashboard.yml` | 이미지 게시 후 · 수동 | `site/index.html` |
 
 각 단계는 PR 을 만들 뿐 스스로 머지하지 않습니다. **머지가 곧 담당자의 확인입니다.**
 
@@ -98,7 +99,11 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 이 저장소를 템플릿으로 새 저장소를 만든 뒤:
 
 1. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests** 활성화
-2. GHCR 패키지 설정에서 새 저장소에 Actions 접근 권한 부여
+2. Actions → **publish-db-image** 를 한 번 실행
+
+2번이 **본인 GHCR 에** DB 이미지를 만듭니다. 워크플로는 이미지를
+`ghcr.io/<본인 아이디>/hira-billing-db` 로 참조하므로, 남의 패키지에 접근 권한을
+받을 일도 collaborator 를 추가할 일도 없습니다. 본인 것만 보면 됩니다.
 
 시크릿은 없습니다. `llm_reader` 비밀번호는 이미지에 고정돼 있는데, 그 역할은
 `llm.claim` 뷰 하나만 읽을 수 있어 비밀번호를 알아도 더 가져갈 게 없습니다.
@@ -108,7 +113,8 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 ### 로컬에서 DB 실행
 
 ```bash
-gh auth token | docker login ghcr.io -u YOUR_GITHUB_ID --password-stdin
+export GHCR_OWNER=YOUR_GITHUB_ID
+gh auth token | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
 docker compose up -d
 ./db/test-access.sh          # 경계가 서 있는지 확인
 ```
@@ -132,14 +138,20 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │       ├── hira-rule-sync.md         # 0-1: 매일 아침 규정 동기화
 │       ├── billing-intake.yml        # 1~2: 이슈 → 환자ID를 토큰으로 → 호출
 │       ├── billing-review.md         # 3: 청구 판단 → 이슈 댓글
-│       └── publish-db-image.yml      # DB 이미지 → GHCR
+│       ├── build-dashboard.yml       # 청구 현황 → site/index.html
+│       └── publish-db-image.yml      # DB 이미지 → 본인 GHCR
 ├── db/
 │   ├── Dockerfile
 │   ├── init.sql                      # 2테이블 + 토큰화 + llm.claim 뷰 + llm_reader + 빌드 게이트
 │   ├── test-access.sh                # 경계 검사 (compose 또는 이미지 대상)
 │   └── data/                         # 환자 50명 · 진료 50건 (합성, 실제 수가코드)
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
-├── tools/fetch_notices.py            # 심평원 공지 수집 (방화벽 밖 steps 에서 실행)
+├── site/
+│   ├── dashboard.template.html       # 3컬럼: 진료일 / 청구 건 / 청구 판단
+│   └── index.html                    # 빌드 산출물 (러너가 굽는다)
+├── tools/
+│   ├── fetch_notices.py              # 심평원 공지 수집 (방화벽 밖 steps 에서 실행)
+│   └── build_dashboard.py            # llm.claim + 규정 → site/index.html
 └── compose.yaml
 ```
 

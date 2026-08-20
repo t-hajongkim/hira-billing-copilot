@@ -4,7 +4,6 @@
 # init.sql 끝의 경계 게이트가 같이 돌아, 식별 열이 뷰에 새어 든 이미지는 만들어지지 않는다.
 FROM postgres:17-alpine
 
-LABEL org.opencontainers.image.source="https://github.com/t-hajongkim/hira-billing-copilot"
 
 COPY ["data/patient_master.csv",  "/data/patient_master.csv"]
 COPY ["data/treatment_claim.csv", "/data/treatment_claim.csv"]
