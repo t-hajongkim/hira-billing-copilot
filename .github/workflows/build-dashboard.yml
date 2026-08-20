@@ -22,7 +22,37 @@ permissions:
   contents: write
 
 jobs:
+  # 시크릿이 없으면 DB 컨테이너가 뜨지 못한다. 저장소를 막 만든 순간이 그렇다 —
+  # 첫 커밋이 이 워크플로를 깨우는데 참가자는 아직 시크릿을 넣기 전이다.
+  # 그대로 두면 복사 직후 빨간 X 를 본다. 실제로 그랬다. 없으면 조용히 넘어간다.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.look.outputs.ready }}
+    steps:
+      - id: look
+        env:
+          SECRET: ${{ secrets.LLM_DB_PASSWORD }}
+        run: |
+          set -eu
+          if [ -n "${SECRET:-}" ]; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=0" >> "$GITHUB_OUTPUT"
+            {
+              echo "## 시크릿이 아직 없습니다"
+              echo
+              echo "**Settings → Secrets and variables → Actions** 에서"
+              echo "\`LLM_DB_PASSWORD\` 를 등록한 뒤 이 워크플로를 다시 실행해 주세요."
+              echo
+              echo "데이터베이스를 읽는 역할의 비밀번호라, 없으면 DB 가 준비되지 않습니다."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.ready == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
