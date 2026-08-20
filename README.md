@@ -75,7 +75,8 @@ AI가 보는 것은 `llm.claim` 뷰 하나입니다. 이름·생년월일·연�
 
 1. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**
    (규정 수집 PR에 필요합니다)
-2. Settings → Pages → Source를 **GitHub Actions** 로 지정 (화면을 웹으로 열 때만)
+2. Settings → 사이드바 **Code and automation** → **Pages** →
+   **Build and deployment** 아래 **Source** 를 **GitHub Actions** 로 (화면을 웹으로 열 때만)
 
 2번은 저장소 설정이라 워크플로가 대신 켜 줄 수 없습니다. 켜지 않아도 `site/index.html`을
 내려받아 더블클릭하면 같은 화면이 열립니다.
