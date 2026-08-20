@@ -23,7 +23,7 @@ flowchart TD
 |---|---|---|---|
 | 0-1. 규정 동기화 | `hira-rule-sync.md` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
 | 0-2. 환자/진료 DB | `db/` | — | GHCR 이미지 |
-| 1~3. 청구 판단 | `billing-intake.yml` → `billing-review.md` | 대시보드 · Actions · 이슈 | 실행 Artifact `billing-report` |
+| 1~3. 청구 판단 | `billing-intake.yml` → `billing-review.md` | 대시보드 · Actions | 실행 Artifact `billing-report` |
 | 현황 대시보드 | `build-dashboard.yml` | 이미지 게시 후 · 수동 | `site/index.html` |
 
 규정 동기화는 PR 을 만들 뿐 스스로 머지하지 않습니다. **머지가 곧 담당자의 확인입니다.**
@@ -38,9 +38,10 @@ flowchart TD
 `tools/render_report.py` 가 HTML 로 바꾸고, **실행 Artifacts 의 `billing-report`** 로만
 내려받습니다. 아티팩트는 7일 뒤 사라집니다.
 
-이슈로도 요청할 수 있습니다(코파일럿을 직접 붙여 모델을 고르고 싶을 때). 그때도
-`billing-intake` 가 **이슈 본문과 제목의 환자 ID 를 `P****` 로 바꿔 둡니다.**
-판단에 필요한 값은 이미 토큰으로 바뀐 뒤라 원본은 더 필요 없습니다.
+요청도 저장소에 남기지 않습니다. 이슈로 받던 길이 있었는데 걷어냈습니다 —
+요청이 이슈로 들어오면 환자 번호가 저장소에 남고, 그걸 지우는 단계를 또 붙여야
+했습니다. 애초에 안 남기는 편이 낫습니다. 지금은 대시보드에서 넣은 환자 ID 가
+`billing-intake` 안에서 토큰으로 바뀌고 거기서 끝납니다.
 
 보고서를 굽는 마지막 단계에서도 `P#####` 와 `PT_…` 를 한 번 더 가립니다.
 어느 경로로든 식별값이 흘러들면 거기서 걸립니다.
@@ -184,11 +185,10 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 ```text
 .
 ├── .github/
-│   ├── ISSUE_TEMPLATE/billing-check.yml
 │   └── workflows/
 │       ├── shared/billing-db.md      # DB 서비스 · query-billing-db 도구 (공용)
 │       ├── hira-rule-sync.md         # 0-1: 매일 아침 규정 동기화
-│       ├── billing-intake.yml        # 1~2: 환자ID를 토큰으로 → 호출 · 이슈 ID 가리기
+│       ├── billing-intake.yml        # 1~2: 환자ID를 토큰으로 → 호출
 │       ├── billing-review.md         # 3: 청구 판단 → 내려받는 HTML 보고서
 │       ├── build-dashboard.yml       # 청구 현황 → site/index.html
 │       └── publish-db-image.yml      # DB 이미지 → 본인 GHCR
