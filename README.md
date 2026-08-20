@@ -188,8 +188,13 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 3. Settings → Pages → Source: **GitHub Actions** (선택)
 
 2번이 **본인 GHCR 에** DB 이미지를 만듭니다. 워크플로는 이미지를
-`ghcr.io/<본인 아이디>/hira-billing-db` 로 참조하므로, 남의 패키지에 접근 권한을
+`ghcr.io/<본인 아이디>/<저장소 이름>-db` 로 참조하므로, 남의 패키지에 접근 권한을
 받을 일도 collaborator 를 추가할 일도 없습니다. 본인 것만 보면 됩니다.
+
+이름에 **저장소 이름까지** 넣는 이유가 있습니다. 계정 이름만 쓰면 같은 사람이 이
+템플릿으로 두 번째 저장소를 만들 때 부딪힙니다 — GHCR 패키지는 처음 만든 저장소에
+묶이고, 다른 저장소의 토큰은 `denied: permission_denied: write_package` 로 거절됩니다.
+(GHCR 은 소문자만 받으니 저장소 이름도 소문자로 지으세요.)
 
 3번은 요청 화면을 웹으로 여는 것입니다. 화면이 곧 입구이므로 켜는 쪽을 권합니다.
 안 켜도 `site/index.html` 을 내려받아 더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만
@@ -276,8 +281,8 @@ AI 의 판단을 검증할 때 봅니다.
 ### 로컬에서 DB 실행
 
 ```bash
-export GHCR_OWNER=YOUR_GITHUB_ID
-gh auth token | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
+export GHCR_REPO=YOUR_GITHUB_ID/YOUR_REPO
+gh auth token | docker login ghcr.io -u "${GHCR_REPO%%/*}" --password-stdin
 docker compose up -d
 ./db/test-access.sh          # 경계가 서 있는지 확인
 ```

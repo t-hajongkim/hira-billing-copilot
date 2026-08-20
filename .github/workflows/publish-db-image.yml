@@ -1,6 +1,11 @@
 # 환자/진료 DB 이미지를 GHCR 에 올린다.
-# 빌드 중 03-assert-boundary.sql 이 돌기 때문에, 식별 열이 뷰에 새어 든 이미지는
+# 빌드 중 init.sql 끝의 경계 게이트가 돌기 때문에, 식별 열이 뷰에 새어 든 이미지는
 # 애초에 만들어지지 않는다.
+#
+# 이미지 이름에 저장소 이름을 넣는다 — ghcr.io/<계정>/<저장소>-db.
+# 계정 이름만 쓰면 같은 사람이 이 템플릿으로 두 번째 저장소를 만들 때 부딪힌다.
+# GHCR 패키지는 처음 만든 저장소에 묶이고, 다른 저장소의 토큰은 거절당한다 —
+# denied: permission_denied: write_package. 실제로 그렇게 막혔다.
 name: publish-db-image
 
 on:
@@ -20,6 +25,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GHCR 은 대문자가 들어간 이름을 받지 않는다. 여기서 미리 세운다 —
+      # 안 그러면 docker push 가 알아보기 어려운 말로 실패한다.
+      - name: 저장소 이름 확인
+        run: |
+          set -eu
+          NAME="${{ github.repository }}"
+          if [ "$NAME" != "$(printf '%s' "$NAME" | tr 'A-Z' 'a-z')" ]; then
+            echo "::error::저장소 이름에 대문자가 있습니다 ($NAME). GHCR 은 소문자만 받습니다."
+            exit 1
+          fi
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -27,10 +43,10 @@ jobs:
           password: ${{ github.token }}
 
       - name: 빌드
-        run: docker build -t ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest db
+        run: docker build -t ghcr.io/${{ github.repository }}-db:latest db
 
       - name: 경계 검사 — 올리기 전에
-        run: bash db/test-access.sh ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
+        run: bash db/test-access.sh ghcr.io/${{ github.repository }}-db:latest
 
       - name: 올리기
-        run: docker push ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
+        run: docker push ghcr.io/${{ github.repository }}-db:latest
