@@ -31,8 +31,8 @@ RULES = ROOT / "rules/HIRA_RULES.md"
 TEMPLATE = ROOT / "site/dashboard.template.html"
 OUT = ROOT / "site/index.html"
 
-# 화면이 쓰는 열만 읽는다. patient_token 은 일부러 뺐다 —
-# 토큰이 필요한 곳은 intake -> review 뿐이고, 공개되는 페이지가 들고 있을 이유가 없다.
+# 화면이 쓰는 열만 읽는다. patient_id 는 애초에 읽을 수 없다 —
+# llm_reader 에게 그 열만 권한이 없어서, SELECT * 를 쓰면 권한 오류가 난다.
 COLUMNS = [
     "treatment_date", "visit_type", "department_name",
     "primary_diagnosis_code", "order_type", "hira_fee_code", "order_name",

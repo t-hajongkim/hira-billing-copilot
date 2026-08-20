@@ -1,14 +1,14 @@
 ---
-description: Judge one patient's claims against the current HIRA rules and produce a downloadable report.
+description: Judge one patient's already-queried claims against the current HIRA rules and produce a downloadable report.
 on:
   workflow_dispatch:
     inputs:
-      patient_token:
-        description: 환자 토큰 (billing-intake 가 환자 ID 를 바꿔 넘긴다)
+      claims:
+        description: 비식별 진료내역 JSON (billing-intake 가 SQL 로 뽑아 넘긴다)
         required: true
         type: string
       treatment_date:
-        description: 진료일 필터 (비우면 전체)
+        description: 진료일 필터 (보고서 머리말에만 쓴다)
         required: false
         type: string
       model:
@@ -20,14 +20,27 @@ on:
 # Copilot 이 알아서 고르고, 어떤 요금제에서든 돈다.
 model: ${{ inputs.model }}
 env:
-  PATIENT_TOKEN: ${{ inputs.patient_token }}
   TREATMENT_DATE: ${{ inputs.treatment_date }}
+# 데이터베이스가 없다. 기획서 §5.2 — 환자 식별은 SQL 조회 단계에서만 쓰고
+# AI 에게는 그 결과만 준다. 조회는 billing-intake 가 앱 자격증명으로 이미 끝냈다.
+# 그래서 이 실행에는 postgres 서비스도, 조회 도구도, 환자를 가리키는 값도 없다.
 permissions:
   contents: read
+  # gh aw 자신이 쓰는 컨테이너를 받아 온다. DB 이미지는 이제 이 실행에 없다.
   packages: read
   copilot-requests: write
-imports:
-  - shared/billing-db.md
+steps:
+  - name: 진료내역을 파일로 둔다
+    env:
+      CLAIMS: ${{ inputs.claims }}
+    run: |
+      set -euo pipefail
+      printf '%s' "$CLAIMS" > claims.json
+      # 여기서 한 번 더 본다. 식별값이 섞여 들어오면 에이전트에 닿기 전에 세운다.
+      if grep -qE 'P[0-9]{5}' claims.json; then
+        echo "::error::진료내역에 환자 ID 가 들어 있습니다"; exit 1
+      fi
+      python3 -c "import json;d=json.load(open('claims.json'));print(f'진료 {len(d)}건을 받았습니다')"
 safe-outputs:
   # staged 는 "만들되 게시하지 않는다" 는 뜻이다. 에이전트에게 출력 창구는 주되,
   # 이슈·PR·커밋 어디에도 남기지 않는다. 판단 결과에는 그 환자의 진료 내용이
@@ -71,26 +84,26 @@ timeout-minutes: 30
 
 # 진료비 청구 판단
 
-원무 담당자가 환자 한 명의 진료비를 물었다. 그 환자의 진료내역과 현재 심평원 규정을
-대조해 청구 가능 여부와 예상 진료비를 판단하고, 근거와 함께 보고서로 낸다.
+원무 담당자가 환자 한 명의 진료비를 물었다. **그 환자의 진료내역은 이미 조회되어
+`claims.json` 에 들어 있다.** 현재 심평원 규정과 대조해 청구 가능 여부와 예상 진료비를
+판단하고, 근거와 함께 보고서로 낸다.
 
 ## 당신이 받는 것
 
-- `PATIENT_TOKEN` — 환자 하나를 가리키는 토큰.
-- `TREATMENT_DATE` — 진료일 필터. 비어 있으면 그 환자의 전체 진료내역을 본다.
+- `claims.json` — 진료 건의 배열. 조회는 파이프라인이 앱 자격증명으로 이미 끝냈다.
 - `rules/HIRA_RULES.md` — 현재까지 기록된 심평원 규정.
-- `query-billing-db` — 비식별 `llm.claim` 뷰 조회.
+- `TREATMENT_DATE` — 진료일 필터가 걸렸다면 그 날짜. 비어 있으면 전체 기간이다.
 
-**환자 ID·이름·생년월일은 당신에게 오지 않는다.** 뷰에 열 자체가 없다.
-`PATIENT_TOKEN` 은 되돌릴 수 없고, 다른 값의 토큰을 만들 수도 없다.
+**환자 ID·이름·생년월일은 당신에게 오지 않는다.** SQL SELECT 단계에서 빠졌다 —
+가려진 것이 아니라 결과에 없다. 나이는 진료일 기준으로 이미 계산되어 있다.
 요청 원문도 받지 않는다 — 거기엔 환자 ID 가 들어 있기 때문이다.
+
+**데이터베이스에 접속하지 않는다. 접속할 것도 없다** — 이 실행에는 DB 가 없다.
+`claims.json` 에 없는 사실은 지어내지 않는다.
 
 ## 답을 내는 방법
 
 **`create-issue` 로 낸다.** 제목은 `진료비 청구 판단`, 본문이 보고서 전문이다.
-
-**`PATIENT_TOKEN` 값을 본문에 옮겨 적지 않는다.** 대상 문장에도, 표에도, 조회한 SQL 을
-인용할 때도 쓰지 않는다. 보고서는 "진료 N건" 으로만 대상을 밝힌다. 토큰은 조회에만 쓴다.
 
 이슈는 실제로 만들어지지 않는다. 이 워크플로는 staged 로 돌아서, 당신이 낸 본문은
 게시되지 않고 그대로 **내려받는 HTML 보고서**가 된다. 이슈에도 PR 에도 커밋에도
@@ -98,36 +111,15 @@ timeout-minutes: 30
 
 ## Task
 
-1. 그 환자의 진료내역을 조회한다. 필요한 열만 고른다 — `SELECT *` 를 쓰지 않는다.
+1. `claims.json` 을 읽는다. 각 원소가 진료 한 건이다.
+   비어 있으면(`[]`) 그 사실만 적고 끝낸다.
 
-   ```sql
-   SELECT treatment_date, visit_type, department_name,
-          primary_diagnosis_code, secondary_diagnosis_codes,
-          order_type, hira_fee_code, order_name, drug_code, material_code,
-          quantity, unit, coverage_type, copayment_rate,
-          unit_price_krw, total_charge_krw, patient_charge_krw, insurer_charge_krw,
-          claim_status, order_reason_summary,
-          age, sex, insurance_type, insurance_eligibility, copayment_type, special_case_type
-   FROM claim
-   WHERE patient_token = '<PATIENT_TOKEN>'
-   ORDER BY treatment_date
-   ```
-
-   `TREATMENT_DATE` 가 있으면 `AND treatment_date = '<TREATMENT_DATE>'` 를 붙인다.
-   조회 결과가 없으면 그 사실만 적고 끝낸다. 지어내지 않는다.
-
-2. 판단에 쓸 환자 조건을 정리한다 — 나이, 성별, 보험 유형(`insurance_type`),
+2. 판단에 쓸 환자 조건을 정리한다 — 나이(`age`), 성별(`sex`), 보험 유형(`insurance_type`),
    자격(`insurance_eligibility`), 본인부담 구분(`copayment_type`),
-   산정특례(`special_case_type`).
+   산정특례(`special_case_type`). 모든 행에 같은 값이 들어 있다.
 
-3. 같은 환자의 과거 진료를 확인한다. 횟수 제한이나 이전 치료 여부가 조건인 규정이 있다.
-
-   ```sql
-   SELECT hira_fee_code, order_name, count(*) AS 횟수,
-          min(treatment_date) AS 최초, max(treatment_date) AS 최근
-   FROM claim WHERE patient_token = '<PATIENT_TOKEN>'
-   GROUP BY 1, 2 ORDER BY 3 DESC
-   ```
+3. 같은 `hira_fee_code` 가 여러 번 나오면 횟수와 최초·최근 진료일을 센다.
+   횟수 제한이나 이전 치료 여부가 조건인 규정이 있다.
 
 4. `rules/HIRA_RULES.md` 를 읽고, 이 진료건의 `hira_fee_code` 에 닿는 규정을 찾는다.
 
@@ -147,6 +139,7 @@ timeout-minutes: 30
 
    `claim_status` 가 `ADJUSTED`·`REJECTED` 면 이미 조정/반송된 건이다. 그 사실을 함께 적는다.
    기록된 규정에 **수가삭제**로 남은 코드가 청구돼 있으면 반드시 짚는다.
+   **신설 코드가 시행일 전 진료에 청구돼 있으면** 그때는 없던 코드다 — 불인정으로 짚는다.
 
 6. 금액을 확인한다. `total_charge_krw`, `patient_charge_krw`, `insurer_charge_krw` 가
    `copayment_rate` 와 맞는지 산술로 검증한다. 어긋나면 그 사실을 적는다 —
@@ -191,6 +184,5 @@ timeout-minutes: 30
 - 금액만 답하지 않는다. **적용 규정·시행일·판단 근거를 반드시 함께 적는다.**
   담당자가 검증할 수 없는 답은 쓸모가 없다.
 - 규정에 없는 조건을 만들어 내지 않는다. 판단이 안 서면 "조건부"로 두고 무엇이 필요한지 적는다.
-- 환자 단위 행이나 `PT_...` 토큰을 보고서에 그대로 쓰지 않는다. 진료 건 단위 판단으로 적는다.
-  토큰을 적으면 출력 검사가 유출로 잡는다 — 실제로 그렇게 됐다.
+- 보고서는 진료 건 단위로 적는다. 환자를 가리키는 값은 애초에 받지 않았으니 쓸 일도 없다.
 - 이 답변은 원무 담당자의 확인이 필요한 참고자료다. 마지막에 그 사실을 한 줄로 적는다.
