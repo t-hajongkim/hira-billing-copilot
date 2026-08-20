@@ -168,6 +168,10 @@
   .sheet input{width:100%;height:40px;margin:14px 0 16px;border:1px solid var(--line);
     border-radius:12px;padding:0 13px;font:inherit;font-size:13px;background:var(--card);outline:none}
   .sheet input:focus{border-color:var(--accent)}
+  .sheet .mk{display:flex;align-items:center;justify-content:center;height:40px;
+    margin:14px 0 4px;border-radius:12px;background:var(--ink);color:#fff;font-size:13px;
+    font-weight:750;text-decoration:none;letter-spacing:-.2px}
+  .sheet .mk:hover{background:#000}
   .sheet .row2{display:flex;gap:8px;justify-content:flex-end}
   .sheet .row2 button{height:35px;border-radius:11px;border:1px solid var(--line);cursor:pointer;
     font-size:12.5px;font-weight:750;padding:0 15px;background:var(--card)}
@@ -278,16 +282,21 @@
 <div class="over" id="cfg" hidden>
   <div class="sheet">
     <h2>GitHub 연결</h2>
-    <p>GitHub 은 익명 요청으로 워크플로를 시작해 주지 않습니다. 이 토큰은
+    <p>깃헙은 익명 요청으로 워크플로를 시작해 주지 않습니다 — 공식 문서에 그렇게 적혀
+       있고, 페이지에서 바로 실행하려면 토큰이 <b>한 번</b> 필요합니다. 이 토큰은
        <b>이 브라우저에만</b> 저장되고 페이지에도 저장소에도 들어가지 않습니다.
        각자 자기 토큰으로 자기 저장소를 돌립니다.</p>
-    <p>한 번만 만들면 됩니다 —
-       <a href="https://github.com/settings/personal-access-tokens/new"
-          target="_blank" rel="noopener">Fine-grained token 만들기</a> →
-       이 저장소 선택 → Repository permissions 의 <code>Actions: Read and write</code>.</p>
+    <p><b>두 번 누르면 끝납니다.</b> 아래를 누르면 권한(<code>repo</code>)이 미리 체크된
+       발급 화면이 열립니다 → <b>Generate token</b> → 나온 값을 아래 칸에 붙여넣으세요.</p>
+    <a class="mk" target="_blank" rel="noopener"
+       href="https://github.com/settings/tokens/new?scopes=repo&amp;description=HIRA+Billing+Copilot">토큰 만들기 →</a>
     <input id="tok" type="password" autocomplete="off" spellcheck="false"
-           placeholder="github_pat_… 또는 ghp_…">
-    <p style="margin-bottom:0">비워 두고 저장하면 지워집니다.</p>
+           placeholder="ghp_… 를 붙여넣으세요">
+    <p style="margin-bottom:0">더 좁게 주려면
+       <a href="https://github.com/settings/personal-access-tokens/new" target="_blank"
+          rel="noopener">fine-grained token</a> 에서 이 저장소만 고르고
+       <code>Actions: Read and write</code> 하나만 켜면 됩니다.
+       비워 두고 저장하면 지워집니다.</p>
     <div class="row2" style="margin-top:16px">
       <button id="cfgClear">최근 기록 지우기</button>
       <button id="cfgCancel">닫기</button>
