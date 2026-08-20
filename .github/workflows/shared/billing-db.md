@@ -14,10 +14,9 @@ tools:
   cli-proxy: true
 services:
   postgres:
-    image: ghcr.io/${{ github.repository }}-db:latest
-    credentials:
-      username: ${{ github.actor }}
-      password: ${{ secrets.GITHUB_TOKEN }}
+    # 표준 이미지를 쓴다. 우리 이미지를 GHCR 에 올려 쓰면 참조에 계정 이름이 들어가는데,
+    # 대문자가 섞인 계정(WhoAmI125)에서는 도커가 그 참조를 거부한다. 계정 이름은 못 바꾼다.
+    image: postgres:17-alpine
     env:
       POSTGRES_DB: billing
       POSTGRES_USER: billing
@@ -32,6 +31,13 @@ services:
 steps:
   - name: Install PostgreSQL client
     run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+  - name: 데이터베이스 세우기
+    env:
+      PGPASSWORD: billing
+    run: |
+      set -euo pipefail
+      psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -U billing -d billing -f db/init.sql
+      echo "환자/진료 데이터와 경계를 세웠습니다."
 mcp-scripts:
   query-billing-db:
     description: Run one read-only SELECT or WITH query against the de-identified llm.claim view.

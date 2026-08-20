@@ -9,71 +9,28 @@
 name: "9. 확인 화면 다시 굽기"
 
 on:
-  # db/data 가 바뀌면 이미지부터 다시 올라가야 한다. push 로 같이 걸면
-  # 대시보드가 옛 이미지를 읽는다 — 실제로 두 워크플로가 같은 초에 시작해 그렇게 됐다.
-  # 그래서 이미지 게시가 끝난 뒤에 돈다.
-  workflow_run:
-    workflows: [publish-db-image]
-    types: [completed]
   push:
     branches: [main]
     paths:
       - "rules/**"
+      - "db/**"
       - "site/dashboard.template.html"
       - "tools/build_dashboard.py"
   workflow_dispatch:
 
 permissions:
   contents: write
-  packages: read
 
 jobs:
-  # 이미지가 아직 없을 수 있다. 템플릿으로 저장소를 만든 첫 순간이 그렇다 —
-  # 첫 커밋이 이 워크플로와 publish-db-image 를 같이 깨우는데, 대시보드는 이미지를
-  # 읽어야 굽는다. 그대로 두면 복사 직후 빨간 X 가 하나 뜬다. 실제로 그랬다.
-  # 없으면 조용히 넘어간다 — 이미지가 올라오면 workflow_run 으로 다시 불린다.
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
-    outputs:
-      ready: ${{ steps.look.outputs.ready }}
-    steps:
-      - name: DB 이미지가 있나
-        id: look
-        env:
-          TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          IMAGE="ghcr.io/${{ github.repository }}-db:latest"
-          printf '%s' "$TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
-            echo "ready=1" >> "$GITHUB_OUTPUT"
-            echo "이미지 확인: $IMAGE"
-          else
-            echo "ready=0" >> "$GITHUB_OUTPUT"
-            {
-              echo "## DB 이미지가 아직 없습니다"
-              echo
-              echo "\`$IMAGE\` 를 찾지 못해 대시보드를 굽지 않고 넘어갑니다."
-              echo "**publish-db-image** 가 끝나면 이 워크플로가 다시 불려 자동으로 만들어집니다."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
   build:
-    needs: check
-    if: needs.check.outputs.ready == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     services:
       postgres:
-        image: ghcr.io/${{ github.repository }}-db:latest
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        # 표준 이미지를 쓴다. 우리 이미지를 GHCR 에 올리면 참조에 계정 이름이 들어가는데,
+        # 대문자가 섞인 계정에서는 도커가 그 참조를 거부한다. 계정 이름은 바꿀 수 없다.
+        image: postgres:17-alpine
         env:
           POSTGRES_DB: billing
           POSTGRES_USER: billing
@@ -89,6 +46,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: 데이터베이스 세우기
+        env:
+          PGPASSWORD: billing
+        run: |
+          set -euo pipefail
+          psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -U billing -d billing -f db/init.sql
+          echo "환자/진료 데이터와 경계를 세웠습니다."
+
+      # 경계는 세울 때마다 확인한다. 예전에는 이미지를 올리기 전에 한 번 봤는데,
+      # 이미지를 없앴으니 이 자리에서 본다 — 오히려 매 실행마다 보게 된다.
+      - name: 경계 검사
+        run: bash db/test-access.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

@@ -52,10 +52,10 @@ CREATE TABLE public.treatment_claim (
     created_at               timestamp NOT NULL
 );
 
-COPY public.patient_master FROM '/data/patient_master.csv'
-    WITH (FORMAT csv, HEADER, ENCODING 'UTF8');
-COPY public.treatment_claim FROM '/data/treatment_claim.csv'
-    WITH (FORMAT csv, HEADER, ENCODING 'UTF8');
+-- \copy 는 psql 이 파일을 읽어 보내는 것이다. 서버 안에 파일이 없어도 된다 —
+-- 그래서 이 스크립트를 표준 postgres 컨테이너에 그대로 부어 넣을 수 있다.
+\copy public.patient_master FROM 'db/data/patient_master.csv' WITH (FORMAT csv, HEADER, ENCODING 'UTF8')
+\copy public.treatment_claim FROM 'db/data/treatment_claim.csv' WITH (FORMAT csv, HEADER, ENCODING 'UTF8')
 
 CREATE INDEX ON public.treatment_claim (patient_id, treatment_date);
 

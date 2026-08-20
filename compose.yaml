@@ -1,9 +1,11 @@
 services:
   postgres:
-    # GHCR_REPO 를 본인 저장소(<아이디>/<저장소>)로 두고 쓴다.
-    # 이미지는 각자 자기 GHCR 에 올라간다 — 남의 패키지에 접근 권한을 받을 일이 없다.
-    image: ghcr.io/${GHCR_REPO:?GHCR_REPO 를 본인 저장소(<아이디>/<저장소>)로 설정하세요}-db:latest
-    pull_policy: always
+    # 표준 이미지에 init.sql 을 부어 세운다. 우리 이미지를 따로 만들지 않는다.
+    # \copy 는 psql 의 cwd(/) 기준이라 ./db 를 /db 에 걸어 두면 경로가 맞는다.
+    image: postgres:17-alpine
+    volumes:
+      - ./db:/db:ro
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     environment:
       POSTGRES_DB: billing
       POSTGRES_USER: billing

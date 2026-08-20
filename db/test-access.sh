@@ -1,26 +1,18 @@
 #!/bin/sh
 # 경계가 실제로 서 있는지 확인한다.
 #
-#   db/test-access.sh                     compose 로 띄운 DB 에 대해
-#   db/test-access.sh <image>             이미지를 직접 띄워서 (GHCR 반출 전 검사)
+#   db/test-access.sh            127.0.0.1 의 DB 에 대해 (워크플로 안에서 쓰는 길)
+#   db/test-access.sh --compose  docker compose 로 띄운 DB 에 대해
 set -eu
 
-IMAGE="${1:-}"
+MODE="${1:-}"
 PW="llm-readonly"
 
-if [ -n "$IMAGE" ]; then
-    CID=$(docker run -d -e POSTGRES_DB=billing -e POSTGRES_USER=billing \
-            -e POSTGRES_PASSWORD=billing "$IMAGE")
-    trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
-    i=0; while [ $i -lt 60 ]; do
-        docker exec "$CID" pg_isready -h 127.0.0.1 -U billing -d billing >/dev/null 2>&1 && break
-        i=$((i+1)); sleep 1
-    done
-    q() { docker exec -e PGPASSWORD="$PW" "$CID" \
-            psql -X -qAt -h 127.0.0.1 -U llm_reader -d billing -c "$1"; }
+if [ "$MODE" = "--compose" ]; then
+    q() { docker compose exec -T -e PGPASSWORD="$PW"             postgres psql -X -qAt -h 127.0.0.1 -U llm_reader -d billing -c "$1"; }
 else
-    q() { docker compose exec -T -e PGPASSWORD="$PW" \
-            postgres psql -X -qAt -h 127.0.0.1 -U llm_reader -d billing -c "$1"; }
+    # 워크플로 안에서는 DB 가 127.0.0.1 에 붙어 있다.
+    q() { PGPASSWORD="$PW" psql -X -qAt -h 127.0.0.1 -U llm_reader -d billing -c "$1"; }
 fi
 
 say() { printf '  %-38s %s\n' "$1" "$2"; }
