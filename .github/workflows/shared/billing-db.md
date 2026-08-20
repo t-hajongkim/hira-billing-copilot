@@ -14,7 +14,7 @@ tools:
   cli-proxy: true
 services:
   postgres:
-    image: ghcr.io/t-hajongkim/hira-billing-db:latest
+    image: ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
     credentials:
       username: ${{ github.actor }}
       password: ${{ secrets.GITHUB_TOKEN }}
