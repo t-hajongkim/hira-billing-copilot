@@ -8,7 +8,9 @@ name: billing-intake
 
 on:
   issues:
-    types: [assigned]
+    # 이슈를 만들면 바로 돈다. 담당자 지정을 기다리지 않는다.
+    # labeled 도 받는 이유는 라벨을 나중에 붙여 다시 돌릴 수 있게 하려는 것이다.
+    types: [opened, labeled]
 
 permissions:
   contents: read
@@ -18,7 +20,10 @@ permissions:
 
 jobs:
   intake:
-    if: contains(github.event.issue.labels.*.name, 'billing-check')
+    # 라벨이 아니라 제목으로 판별한다. 이슈 템플릿은 레포에 이미 있는 라벨만
+    # 붙일 수 있어서, template 에서 새로 만든 레포에서는 조용히 안 붙는다.
+    # 제목 접두사는 템플릿이 항상 넣는다.
+    if: startsWith(github.event.issue.title, '진료비 확인')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -84,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run billing-review.lock.yml \
+          gh workflow run billing-review.lock.yml             --repo "${{ github.repository }}" \
             -f patient_token="${{ steps.resolve.outputs.token }}" \
             -f issue_number="${{ github.event.issue.number }}" \
             -f treatment_date="${{ steps.resolve.outputs.treatment_date }}"
@@ -95,7 +100,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REASON: ${{ steps.resolve.outputs.reason }}
         run: |
-          gh issue comment "${{ github.event.issue.number }}" --body \
+          gh issue comment "${{ github.event.issue.number }}"             --repo "${{ github.repository }}" --body \
             "확인을 시작하지 못했습니다 - $REASON
 
           이슈 본문의 **환자 ID**를 확인해 주세요. (예: P00032)"
