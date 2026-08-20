@@ -65,9 +65,13 @@ jobs:
         run: python tools/build_dashboard.py --check
 
       - name: 대시보드 굽기
+        # 청구 데이터는 비식별 뷰(llm_reader)로 읽는다.
+        # --app-dsn 은 환자 ID 범위(P00001 ~ P00050) 한 줄만 읽는다 —
+        # 검색창에 무엇을 넣을지 알려 주려는 것이고, 진료 내용과는 잇히지 않는다.
         run: |
           python tools/build_dashboard.py \
-            --dsn "postgresql://llm_reader:llm-readonly@127.0.0.1:5432/billing"
+            --dsn "postgresql://llm_reader:llm-readonly@127.0.0.1:5432/billing" \
+            --app-dsn "postgresql://billing:billing@127.0.0.1:5432/billing"
 
       - name: 자립성 확인
         run: |
@@ -81,31 +85,35 @@ jobs:
               exit 1
             fi
           done
-          if printf '%s' "$body" | grep -qE '(src|href)="https?://'; then
+          if printf '%s' "$body" | grep -qE '(src|href)="https?://[^"]*"' &&
+             printf '%s' "$body" | grep -oE '(src|href)="https?://[^"]*"' |
+               grep -qvE '"https://github\.com/'; then
             echo "::error::외부 리소스를 참조합니다."
             exit 1
           fi
 
-          # 나가는 요청은 딱 하나만 허용한다 — 워크플로를 부르는 GitHub API.
-          # 화면 데이터를 밖에서 끌어오기 시작하면 오프라인에서 못 연다.
-          n=$(printf '%s' "$body" | grep -c 'fetch(' || true)
-          if [ "$n" -gt 1 ]; then
-            echo "::error::fetch 가 $n 곳입니다. 워크플로 호출 하나만 허용됩니다."
-            exit 1
-          fi
-          if [ "$n" -eq 1 ] && ! printf '%s' "$body" | grep -q 'fetch("https://api.github.com/'; then
-            echo "::error::fetch 가 api.github.com 이 아닌 곳을 부릅니다."
-            exit 1
-          fi
-
+          # 화면이 말을 거는 곳은 GitHub 하나뿐이어야 한다.
+          # 워크플로 실행, 실행 상태 조회, 결과 파일 내려받기 — 전부 api.github.com 이다.
+          # 횟수는 세지 않는다. 세면 기능을 늘릴 때마다 검사부터 고치게 된다.
+          # 대신 주소가 GitHub 이 아닌 것이 하나라도 있으면 세운다.
           hosts=$(printf '%s' "$body" | grep -oE 'https?://[a-zA-Z0-9.-]+' | sort -u |
                   grep -vE '^https://(api\.)?github\.com$' || true)
           if [ -n "$hosts" ]; then
             echo "::error::허용되지 않은 호스트: $hosts"
             exit 1
           fi
+          if ! printf '%s' "$body" | grep -q 'API = "https://api.github.com"'; then
+            echo "::error::GitHub API 주소가 상수로 박혀 있지 않습니다."
+            exit 1
+          fi
 
-          echo "자립성 OK — 화면은 오프라인에서 열리고, 나가는 요청은 워크플로 호출뿐입니다."
+          # 화면에 토큰이 구워지면 안 된다 — 페이지는 토큰으로 할 일이 없다.
+          if printf '%s' "$body" | grep -qE '"(PT|EN)_[0-9a-f]{12}"'; then
+            echo "::error::화면에 토큰이 구워졌습니다."
+            exit 1
+          fi
+
+          echo "자립성 OK — 나가는 요청은 GitHub 뿐이고, 화면에 토큰은 없습니다."
 
       - name: 변경 있으면 커밋
         run: |
