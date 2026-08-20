@@ -61,6 +61,8 @@ jobs:
           --health-retries 30
 
     steps:
+      # db/init.sql 을 읽어야 한다. 전에는 이미지에 들어 있어 체크아웃이 필요 없었다.
+      - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
       - name: 데이터베이스 세우기
