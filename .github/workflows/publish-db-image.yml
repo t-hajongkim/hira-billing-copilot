@@ -30,7 +30,7 @@ jobs:
         run: docker build -t ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest db
 
       - name: 경계 검사 — 올리기 전에
-        run: bash db/verify-image.sh ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
+        run: bash db/test-access.sh ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
 
       - name: 올리기
         run: docker push ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
