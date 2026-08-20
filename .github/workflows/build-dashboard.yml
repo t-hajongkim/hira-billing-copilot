@@ -28,11 +28,43 @@ permissions:
   packages: read
 
 jobs:
-  build:
-    # workflow_run 으로 왔으면 그 실행이 성공했을 때만.
+  # 이미지가 아직 없을 수 있다. 템플릿으로 저장소를 만든 첫 순간이 그렇다 —
+  # 첫 커밋이 이 워크플로와 publish-db-image 를 같이 깨우는데, 대시보드는 이미지를
+  # 읽어야 굽는다. 그대로 두면 복사 직후 빨간 X 가 하나 뜬다. 실제로 그랬다.
+  # 없으면 조용히 넘어간다 — 이미지가 올라오면 workflow_run 으로 다시 불린다.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     if: >-
       github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success'
+    outputs:
+      ready: ${{ steps.look.outputs.ready }}
+    steps:
+      - name: DB 이미지가 있나
+        id: look
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository }}-db:latest"
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+            echo "이미지 확인: $IMAGE"
+          else
+            echo "ready=0" >> "$GITHUB_OUTPUT"
+            {
+              echo "## DB 이미지가 아직 없습니다"
+              echo
+              echo "\`$IMAGE\` 를 찾지 못해 대시보드를 굽지 않고 넘어갑니다."
+              echo "**publish-db-image** 가 끝나면 이 워크플로가 다시 불려 자동으로 만들어집니다."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.ready == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
