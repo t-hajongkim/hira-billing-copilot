@@ -74,8 +74,11 @@ CREATE TABLE private.masking_secret (
     id     boolean PRIMARY KEY DEFAULT true CHECK (id),
     secret text NOT NULL
 );
-INSERT INTO private.masking_secret (secret)
-VALUES (encode(private.gen_random_bytes(32), 'hex'));
+-- 비밀키는 이미지 빌드 때 한 번 뽑아 박는다(Dockerfile 이 치환한다).
+-- 컨테이너 기동마다 새로 뽑으면 같은 환자가 실행마다 다른 토큰을 받는다.
+-- 워크플로가 둘로 나뉘어 있어(intake 가 토큰을 만들고 review 가 그 토큰으로 조회)
+-- 토큰이 실행 간에 안정적이지 않으면 조회가 0건이 된다 — 실제로 그렇게 됐다.
+INSERT INTO private.masking_secret (secret) VALUES ('__MASKING_SECRET__');
 
 CREATE FUNCTION private.token(kind text, value text)
 RETURNS text
