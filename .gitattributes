@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.csv text eol=lf
+
+.github/workflows/*.lock.yml linguist-generated=true

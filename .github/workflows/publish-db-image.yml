@@ -1,0 +1,36 @@
+# 환자/진료 DB 이미지를 GHCR 에 올린다.
+# 빌드 중 03-assert-boundary.sql 이 돌기 때문에, 식별 열이 뷰에 새어 든 이미지는
+# 애초에 만들어지지 않는다.
+name: publish-db-image
+
+on:
+  push:
+    branches: [main]
+    paths: ["db/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: 빌드
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest db
+
+      - name: 경계 검사 — 올리기 전에
+        run: bash db/verify-image.sh ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
+
+      - name: 올리기
+        run: docker push ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
