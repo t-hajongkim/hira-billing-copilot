@@ -197,8 +197,14 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 (GHCR 은 소문자만 받으니 저장소 이름도 소문자로 지으세요.)
 
 3번은 요청 화면을 웹으로 여는 것입니다. 화면이 곧 입구이므로 켜는 쪽을 권합니다.
-안 켜도 `site/index.html` 을 내려받아 더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만
-건너뜁니다(대시보드는 그대로 커밋됩니다).
+**워크플로가 대신 켤 수는 없습니다** — 저장소 설정을 바꾸는 일이라 관리 권한이 필요하고,
+실행 토큰에는 그게 없습니다(`actions/configure-pages` 의 enablement 도 "requires a token
+other than GITHUB_TOKEN" 이라고 못박혀 있습니다). 안 켜도 `site/index.html` 을 내려받아
+더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만 건너뜁니다
+(대시보드는 그대로 커밋됩니다).
+
+순서가 중요합니다. **2번이 안 되면 3번도 소용없습니다** — 대시보드는 DB 이미지를 읽어
+굽기 때문에, 이미지가 없으면 `build-dashboard` 가 그 앞에서 멈춥니다.
 
 Pages 사이트는 **인터넷에 공개됩니다.** 올라가는 값은 `llm.claim` 뷰에서 온
 비식별 합성 데이터뿐이고 환자 이름·ID·생년월일은 뷰에 열 자체가 없지만,
