@@ -1,4 +1,5 @@
 ---
+name: "2. 진료비 청구 판단"
 description: Judge one patient's already-queried claims against the current HIRA rules and produce a downloadable report.
 on:
   workflow_dispatch:

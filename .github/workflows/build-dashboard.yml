@@ -6,7 +6,7 @@
 #
 # 브랜치 소스는 / 와 /docs 만 받는다. site/ 를 그대로 쓰려고 Actions 배포를 쓴다.
 # 커밋도 그대로 남긴다 — Pages 를 안 켠 사람은 파일을 내려받아 더블클릭하면 된다.
-name: build-dashboard
+name: "9. 확인 화면 다시 굽기"
 
 on:
   # db/data 가 바뀌면 이미지부터 다시 올라가야 한다. push 로 같이 걸면

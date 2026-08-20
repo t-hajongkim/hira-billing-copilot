@@ -1,4 +1,5 @@
 ---
+name: "0. 규정 수집 (매일 자동)"
 description: Check HIRA and MOHW for billing rule updates each morning and propose a rules/HIRA_RULES.md change in a pull request.
 on:
   schedule:

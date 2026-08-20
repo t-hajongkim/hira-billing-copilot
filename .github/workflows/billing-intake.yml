@@ -12,7 +12,7 @@
 # (환자 ID 가 들어 있다). 에이전트 워크플로를 요청 이벤트에 직접 걸면 그 컨텍스트가
 # 프롬프트에 실린다. 그래서 여기서 조회까지 끝내고, 에이전트는
 # workflow_dispatch 로 부른다 — 그쪽엔 비식별 진료행만 넘어간다.
-name: billing-intake
+name: "1. 진료비 확인 요청"
 
 on:
   workflow_dispatch:

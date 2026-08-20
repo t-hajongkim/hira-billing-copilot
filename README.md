@@ -11,14 +11,28 @@ AI는 데이터베이스에 접속하지 않습니다. 환자 식별은 SQL 조�
 
 ```mermaid
 flowchart TD
-    A["매일 06:00 KST<br/>심평원·복지부 공고 수집"] --> B["PR: rules/HIRA_RULES.md<br/>공고일 · 시행일 · 대상 코드"]
-    B -->|담당자가 머지 = 승인| C["규정 Knowledge Base"]
-    D["원무부 요청<br/>환자 ID"] --> E["SQL 조회<br/>JOIN 후 환자 ID 제거"]
-    F[("DB 이미지<br/>llm.claim 뷰")] --> E
-    E --> G["AI 청구 판단"]
-    C --> G
-    G --> H["내려받는 HTML 보고서<br/>실행 Artifact"]
+    subgraph SETUP["기본 설정 · 사용자 개입 없음"]
+        IMG["DB 이미지<br/>환자 50명 · 진료 50건"]
+        VIEW["확인용 View<br/>llm.claim — 식별 열이 없다"]
+        SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"]
+        IMG --> VIEW
+        SYNC --> KB["규정 Knowledge Base<br/>공고일 · 시행일 · 대상 코드"]
+    end
+
+    subgraph WORK["원무부 요청"]
+        PID["환자 ID"] --> JOIN["SQL 조인<br/>결과에서 환자 ID 제거"]
+        JOIN --> AI["AI 청구 판단<br/>진료일과 시행일 대조"]
+    end
+
+    subgraph HITL["Human in the loop"]
+        REPORT["결과 확인용 HTML 보고서"] --> CHECK["기록에 남지 않는 결과 확인"]
+    end
+
+    VIEW --> JOIN
+    KB --> AI
+    AI --> REPORT
 ```
+
 
 | 단계 | 워크플로 | 트리거 | 산출물 |
 |---|---|---|---|
@@ -28,6 +42,14 @@ flowchart TD
 | 3~4. 판단과 보고서 | `billing-review.md` | 2단계가 호출 | Artifact `billing-report` |
 | — | `build-dashboard.yml` | 이미지 게시 후 · 수동 | `site/index.html` · Pages |
 | — | `sweep-runs.yml` | 30분마다 | 지난 요청 실행 만료 |
+
+Actions 탭에는 파이프라인 순서대로 번호가 붙어 보입니다.
+
+```
+0. 규정 수집 (매일 자동)      0. DB 이미지 만들기
+1. 진료비 확인 요청           2. 진료비 청구 판단
+9. 확인 화면 다시 굽기        9. 요청 기록 지우기
+```
 
 규정 동기화는 PR을 만들 뿐 스스로 머지하지 않습니다. 머지가 곧 담당자의 승인입니다.
 
@@ -68,8 +90,8 @@ FROM llm.claim c WHERE c.patient_id = 'P00013'
 
 판단 결과는 이슈·PR·커밋 어디에도 게시되지 않습니다. `safe-outputs`를 `staged`로 두어
 출력 창구로만 쓰고, 같은 실행 안에서 `render_report.py`가 HTML로 구워
-**실행 Artifact `billing-report`** 로만 내려받습니다. 요청을 보낸 화면은 실행이 끝나기를
-기다렸다가 받는 버튼을 띄웁니다.
+**실행 Artifact `billing-report`** 로만 내려받습니다 — 기록에 남지 않는 결과 확인입니다.
+요청을 보낸 화면은 보고서가 올라오는 순간 받는 버튼을 띄웁니다.
 
 ## 데이터 보호
 
@@ -180,7 +202,7 @@ python3 tools/render_report.py --check     # 보고서 변환기 자체 점검
 ├── tools/
 │   ├── fetch_notices.py              # 심평원·복지부 공고 수집
 │   ├── build_dashboard.py            # llm.claim + 규정 → site/index.html
-│   └── render_report.py              # AI 판단 → 내려받는 HTML 보고서
+│   └── render_report.py              # AI 판단 → 결과 확인용 HTML 보고서
 └── site/
     └── dashboard.template.html       # 검색창 + 진행 표시 + 청구 데이터 훑어보기
 ```
