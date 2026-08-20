@@ -69,11 +69,16 @@ jobs:
         id: query
         env:
           PGPASSWORD: billing
-          INPUT_PATIENT_ID: ${{ inputs.patient_id }}
-          INPUT_TREATMENT_DATE: ${{ inputs.treatment_date }}
+          # 환자 ID 를 env 로 받지 않는다. 러너는 스텝을 시작할 때 env 목록을 로그에
+          # 그대로 찍는데, 그건 ::add-mask:: 가 걸리기 전이다 —
+          # INPUT_PATIENT_ID: P00013 이 실행 로그에 남았다. 실제로 그랬다.
+          # 이벤트 파일에서 직접 읽으면 로그에 나올 자리가 없다.
         run: |
           set -euo pipefail
           emit() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+
+          INPUT_PATIENT_ID=$(jq -r '.inputs.patient_id // ""' "$GITHUB_EVENT_PATH")
+          INPUT_TREATMENT_DATE=$(jq -r '.inputs.treatment_date // ""' "$GITHUB_EVENT_PATH")
 
           # 환자 ID는 이 스텝에서 끝난다. 밖으로 나가는 것은 비식별 진료행뿐이다.
           PATIENT_ID=$(printf '%s' "${INPUT_PATIENT_ID:-}" | grep -oE 'P[0-9]{5}' | head -1 || true)
