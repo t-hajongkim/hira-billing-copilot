@@ -1,0 +1,17 @@
+name: net-probe
+on: { workflow_dispatch: }
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: 한국 정부 사이트가 러너에서 닿는가
+        run: |
+          for u in https://www.hira.or.kr https://www.mohw.go.kr \
+                   https://opendata.hira.or.kr https://api.odcloud.kr \
+                   https://www.data.go.kr https://apis.data.go.kr ; do
+            printf '%-34s ' "$u"
+            curl -s -m 20 -o /dev/null -w 'http=%{http_code} time=%{time_total}s\n' \
+              -A 'Mozilla/5.0' "$u" || echo "FAIL(exit $?)"
+          done
