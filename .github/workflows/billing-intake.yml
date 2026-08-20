@@ -1,0 +1,102 @@
+# 이슈에서 환자 ID 를 받아 토큰으로 바꾸고, 청구 판단 워크플로를 부른다.
+#
+# 왜 워크플로가 둘인가 — 기획서 §5.1: AI 는 이슈 본문을 보면 안 된다(환자 ID 가 들어 있다).
+# 에이전트 워크플로를 이슈 이벤트로 직접 걸면 이슈 컨텍스트가 프롬프트에 실린다.
+# 그래서 여기서 ID 를 토큰으로 바꾸고, 에이전트는 workflow_dispatch 로 부른다 —
+# 그쪽엔 이슈 컨텍스트가 아예 없고 토큰과 이슈 번호만 넘어간다.
+name: billing-intake
+
+on:
+  issues:
+    types: [assigned]
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+  actions: write
+
+jobs:
+  intake:
+    if: contains(github.event.issue.labels.*.name, 'billing-check')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: ghcr.io/t-hajongkim/hira-billing-db:latest
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_DB: billing
+          POSTGRES_USER: billing
+          POSTGRES_PASSWORD: billing
+          LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U billing -d billing"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: 환자 ID를 토큰으로
+        id: resolve
+        env:
+          PGPASSWORD: billing
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          emit() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+
+          # 환자 ID는 이 스텝에서 끝난다. 밖으로 나가는 것은 토큰뿐이다.
+          PATIENT_ID=$(printf '%s' "${ISSUE_BODY:-}" | grep -oE 'P[0-9]{5}' | head -1 || true)
+          if [ -z "$PATIENT_ID" ]; then
+            emit ok 0
+            emit reason "본문에서 환자 ID(P#####)를 찾지 못했습니다"
+            exit 0
+          fi
+          echo "::add-mask::$PATIENT_ID"
+
+          TREATMENT_DATE=$(printf '%s' "${ISSUE_BODY:-}" |
+            grep -oE '20[0-9]{2}-[01][0-9]-[0-3][0-9]' | head -1 || true)
+
+          # 앱 자격증명으로만 해석한다. llm_reader에게는 이 함수 권한이 없다.
+          TOKEN=$(psql -X -qAt -v ON_ERROR_STOP=1 -h 127.0.0.1 -U billing -d billing \
+            -c "SELECT coalesce(public.resolve_patient_token('$PATIENT_ID'), '')")
+
+          if [ -z "$TOKEN" ]; then
+            emit ok 0
+            emit reason "해당 환자 ID가 진료 데이터에 없습니다"
+            exit 0
+          fi
+
+          emit ok 1
+          emit token "$TOKEN"
+          emit treatment_date "${TREATMENT_DATE:-}"
+          echo "환자 확인됨 - 토큰 $TOKEN (진료일 필터 ${TREATMENT_DATE:-전체})"
+
+      - name: 청구 판단 워크플로 호출
+        if: steps.resolve.outputs.ok == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run billing-review.lock.yml \
+            -f patient_token="${{ steps.resolve.outputs.token }}" \
+            -f issue_number="${{ github.event.issue.number }}" \
+            -f treatment_date="${{ steps.resolve.outputs.treatment_date }}"
+
+      - name: 환자를 못 찾으면 이슈에 알린다
+        if: steps.resolve.outputs.ok != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ steps.resolve.outputs.reason }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --body \
+            "확인을 시작하지 못했습니다 - $REASON
+
+          이슈 본문의 **환자 ID**를 확인해 주세요. (예: P00032)"

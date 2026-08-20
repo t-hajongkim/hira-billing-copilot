@@ -1,0 +1,30 @@
+name: 진료비 확인 요청
+description: 환자 한 명의 진료내역에 대해 청구 가능 여부와 예상 진료비를 확인합니다
+title: "진료비 확인: "
+labels: [billing-check]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        환자 ID 는 **SQL 조회 단계에서만** 쓰입니다. AI 에게는 전달되지 않습니다.
+        워크플로가 먼저 환자 ID 를 되돌릴 수 없는 토큰으로 바꾸고, AI 는 그 토큰만 받습니다.
+
+        이슈를 만든 뒤 **Assignees 에 본인을 지정**하면 확인이 시작됩니다.
+  - type: input
+    id: patient_id
+    attributes:
+      label: 환자 ID
+      placeholder: P00032
+    validations:
+      required: true
+  - type: input
+    id: treatment_date
+    attributes:
+      label: 진료일 (선택)
+      description: 비우면 해당 환자의 전체 진료내역을 봅니다.
+      placeholder: "2026-04-24"
+  - type: textarea
+    id: question
+    attributes:
+      label: 확인하고 싶은 것
+      placeholder: 이 진료내역이 급여로 청구 가능한지, 본인부담금이 얼마인지 확인해주세요.
