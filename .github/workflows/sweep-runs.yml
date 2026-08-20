@@ -16,6 +16,12 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+    inputs:
+      # 지금 당장 비우고 싶을 때 0 을 넣는다. 비워 두면 정해진 30분을 쓴다.
+      older_than_minutes:
+        description: "요청 실행을 몇 분 지난 것부터 지울지 (비우면 30)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,6 +35,7 @@ jobs:
       - name: 지난 실행을 지운다
         env:
           GH_TOKEN: ${{ github.token }}
+          OLDER_THAN: ${{ inputs.older_than_minutes }}
         run: |
           set -euo pipefail
 
@@ -53,7 +60,9 @@ jobs:
             echo "$label: $n건 지움 (기준 $cutoff)"
           }
 
-          INTAKE_CUT=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          MINUTES=$(printf '%s' "${OLDER_THAN:-}" | grep -oE '^[0-9]+$' || true)
+          MINUTES="${MINUTES:-30}"
+          INTAKE_CUT=$(date -u -d "$MINUTES minutes ago" +%Y-%m-%dT%H:%M:%SZ)
           REVIEW_CUT=$(date -u -d '7 days ago'     +%Y-%m-%dT%H:%M:%SZ)
 
           : > "$RUNNER_TEMP/swept.md"
