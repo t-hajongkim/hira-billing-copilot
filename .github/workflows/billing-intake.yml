@@ -128,6 +128,20 @@ jobs:
           printf 'claims<<CLAIMS_EOF\n%s\nCLAIMS_EOF\n' "$CLAIMS" >> "$GITHUB_OUTPUT"
           echo "진료 $N 건을 비식별로 뽑았습니다 (진료일 ${TREATMENT_DATE:-전체})"
 
+          # 무엇을 뽑았는지 요약에 적는다. 진료일과 수가코드뿐이고 식별값은 없다.
+          # 이게 없으면 판단이 끝날 때까지 무엇이 조회됐는지 알 수가 없다.
+          {
+            echo "## 진료내역 $N 건을 뽑았습니다"
+            echo
+            echo "| 진료일 | 수가코드 | 항목 |"
+            echo "|---|---|---|"
+            printf '%s' "$CLAIMS" | python3 -c "
+          import json,sys
+          for c in json.load(sys.stdin):
+              print('| %s | %s | %s |' % (c['treatment_date'], c['hira_fee_code'], c['order_name']))
+          "
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 청구 판단 워크플로 호출
         if: steps.query.outputs.ok == '1'
         env:
