@@ -142,10 +142,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           gh workflow run billing-review.lock.yml --repo "${{ github.repository }}" \
             -f patient_token="${{ steps.resolve.outputs.token }}" \
-            -f issue_number="${{ steps.target.outputs.number }}" \
             -f treatment_date="${{ steps.resolve.outputs.treatment_date }}"
+
+          {
+            echo "## 진료비 판단을 시작했습니다"
+            echo
+            echo "결과는 **billing-review** 실행의 Artifacts 에 \`billing-report\` 로 올라옵니다."
+            echo "이슈·PR·커밋 어디에도 남기지 않습니다."
+            echo
+            echo "[billing-review 실행 보기](${{ github.server_url }}/${{ github.repository }}/actions/workflows/billing-review.lock.yml)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 환자를 못 찾으면 알린다
         if: steps.resolve.outputs.ok != '1'
