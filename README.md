@@ -10,7 +10,7 @@ AI는 데이터베이스에 접속하지 않습니다 — 조회는 워크플로
 
 ## 파이프라인
 
-![청구 판단 파이프라인](docs/pipeline.png)
+![청구 판단 파이프라인](site/pipeline.png)
 
 | 단계 | 워크플로 | 트리거 | 산출물 |
 |---|---|---|---|
@@ -117,14 +117,14 @@ python3 tools/render_report.py --check     # 보고서 변환기 자체 점검
 │   ├── publish-db-image.yml          # DB 이미지 → 본인 GHCR
 │   └── sweep-runs.yml                # 지난 요청 실행 만료 (30분 / 7일)
 ├── db/                               # PostgreSQL 이미지, llm.claim 뷰, 합성 데이터
-├── docs/pipeline.png                 # 파이프라인 그림
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
 ├── tools/
 │   ├── fetch_notices.py              # 심평원·복지부 공고 수집
 │   ├── build_dashboard.py            # llm.claim + 규정 → site/index.html
 │   └── render_report.py              # AI 판단 → 결과 확인용 HTML 보고서
 └── site/
-    └── dashboard.template.html       # 검색창 + 진행 표시 + 청구 데이터 훑어보기
+    ├── dashboard.template.html       # 검색창 + 진행 표시 + 청구 데이터 훑어보기
+    └── pipeline.png                  # 리드미의 파이프라인 그림
 ```
 
 `.lock.yml` 파일은 `gh aw compile`이 생성합니다. 직접 수정하지 말고 `.md`를 고친 뒤
