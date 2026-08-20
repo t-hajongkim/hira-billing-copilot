@@ -140,7 +140,7 @@ jobs:
           for c in json.load(sys.stdin):
               print('| %s | %s | %s |' % (c['treatment_date'], c['hira_fee_code'], c['order_name']))
           "
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 청구 판단 워크플로 호출
         if: steps.query.outputs.ok == '1'
