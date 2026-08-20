@@ -38,7 +38,7 @@ jobs:
 
     services:
       postgres:
-        image: ghcr.io/${{ github.repository_owner }}/hira-billing-db:latest
+        image: ghcr.io/${{ github.repository }}-db:latest
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -144,6 +144,11 @@ jobs:
 
   # Pages 를 안 켠 저장소에서는 이 잡이 실패한다. 그래도 대시보드는 이미
   # 커밋돼 있으니 continue-on-error 로 두고 넘어간다 — 켠 사람만 웹으로 본다.
+  #
+  # 워크플로가 Pages 를 대신 켜 줄 수는 없다. actions/configure-pages 의 enablement
+  # 옵션은 "requires a token other than GITHUB_TOKEN" 이라고 못박혀 있다 —
+  # 저장소 설정을 바꾸는 일이라 관리 권한이 필요하고, 실행 토큰에는 그게 없다.
+  # 그래서 한 번은 사람이 켜야 한다. 대신 안 켜져 있으면 아래에서 그렇게 말해 준다.
   deploy:
     needs: build
     runs-on: ubuntu-24.04
@@ -158,3 +163,17 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v4
+
+      - name: Pages 가 꺼져 있으면 알린다
+        if: failure()
+        run: |
+          {
+            echo "## Pages 가 아직 켜져 있지 않습니다"
+            echo
+            echo "**Settings → Pages → Source: GitHub Actions** 를 한 번 골라 주세요."
+            echo "저장소 설정을 바꾸는 일이라 워크플로가 대신 켤 수 없습니다."
+            echo
+            echo "켜고 나면 이 워크플로를 다시 실행하면 됩니다."
+            echo "대시보드 파일(\`site/index.html\`)은 이미 커밋돼 있으니, 켜지 않아도"
+            echo "내려받아 더블클릭하면 똑같이 동작합니다."
+          } >> "$GITHUB_STEP_SUMMARY"
