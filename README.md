@@ -26,7 +26,7 @@ flowchart TD
 | **0-1** | 심평원 규정 업데이트 | `hira-rule-sync.md` · `tools/fetch_notices.py` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
 | **0-2** | 환자 / 진료 Database | `db/init.sql` · `db/Dockerfile` | `publish-db-image` 수동 1회 | GHCR 이미지 |
 | **1** | 원무부 요청 | `site/index.html` → `billing-intake.yml` | 검색창에 환자 ID · Enter | `workflow_dispatch` 실행 |
-| **2** | SQL 조회 | `billing-intake.yml` · `shared/billing-db.md` | 1 에 이어서 | `patient_token` · 비식별 진료행 |
+| **2** | SQL 조회 | `billing-intake.yml` (`llm.claim` JOIN) | 1 에 이어서 | 비식별 진료행 JSON |
 | **3** | AI 청구 판단 | `billing-review.md` | 2 가 호출 | 판단 마크다운 (게시 안 함) |
 | **4** | 결과 반환 | `tools/render_report.py` (post-steps) | 3 직후 | 실행 Artifact `billing-report` → 화면에 표시 |
 | **—** | 요청 화면 | `build-dashboard.yml` · `tools/build_dashboard.py` | 이미지 게시 후 · 수동 | `site/index.html` · Pages |
@@ -48,11 +48,12 @@ AI 가 합니다. 접속 자체가 실패하면 조용히 넘어가지 않고 �
 Actions 화면으로 넘기지 않습니다 — 넘기면 같은 값을 두 번 입력하게 됩니다.
 저장소에는 아무것도 남지 않습니다.
 
-**2 — SQL 조회.** 환자 ID 는 `billing-intake` 안에서 앱 자격증명으로
-`patient_token` 이 되고 **거기서 끝납니다.** 이어서 AI 는 `query-billing-db` 로
-`llm.claim` 뷰만 조회합니다 — 이름·생년월일·환자 ID 는 뷰에 열 자체가 없습니다.
+**2 — SQL 조회.** 환자 ID 는 `billing-intake` 안에서 앱 자격증명으로 한 번 쓰이고
+**거기서 끝납니다.** 조인은 `llm.claim` 뷰가 이미 해 뒀고, 그 결과에서 `patient_id`
+한 열을 빼 JSON 으로 넘깁니다. 이름·생년월일은 뷰에 열 자체가 없습니다.
 
-**3 — AI 청구 판단.** 진료건마다 `rules/HIRA_RULES.md` 와 대조해
+**3 — AI 청구 판단.** AI 는 DB 에 접속하지 않습니다 — 이 실행에는 DB 가 없습니다.
+받은 `claims.json` 의 진료건마다 `rules/HIRA_RULES.md` 와 대조해
 **급여 인정 / 조건부 / 불인정** 을 가릅니다. 이때 **진료일이 시행일 이후인지** 를
 먼저 봅니다. 금액은 산술로 검산하되 **고쳐 쓰지 않고 어긋났다고 보고합니다.**
 
@@ -100,41 +101,43 @@ gh aw 는 에이전트의 출력을 한 번 더 검사합니다(threat detection
 ## AI 에게 환자 식별정보가 가지 않는 방법
 
 식별정보를 "AI 에게 준 뒤 가리는" 것이 아니라, **애초에 SELECT 되지 않게** 했습니다.
+기획서 §5.2 가 그렇게 정해 두었습니다 — "환자 식별은 SQL 조회 단계에서만 사용하고,
+AI 에 전달되는 SELECT 결과에서는 환자 ID 와 민감정보를 제외한다."
 
 ```
-대시보드 입력창 [환자 ID]
+화면 검색창 [환자 ID]
    │
    ├──────── ✕ ────────> AI          요청 원문은 AI 에게 가지 않는다
    │
    ▼
-billing-intake 단계에서 환자 ID → patient_token 변환 (앱 자격증명)
-   │                     ID 는 이 단계 밖으로 나가지 않는다
-   ▼
-llm.claim 뷰 조회 ─────────────────> AI
-   비식별 진료정보 + rules/HIRA_RULES.md
+billing-intake  ─ 앱 자격증명으로 SQL ─┐
+   WHERE patient_id = 'P00013'        │  조인은 llm.claim 뷰가 이미 해 뒀다
+   to_jsonb(c) - 'patient_id'         │  결과에서 그 한 열을 뺀다
+   │                                  ▼
+   └─ 비식별 진료행 JSON ────────────> billing-review (AI)
+                                       + rules/HIRA_RULES.md
 ```
 
-`patient_token` 은 `db/init.sql` 이 DB 를 만들 때 계산해 **컬럼으로 굳혀 둔** 값입니다.
-`private.token('PT', patient_id)` = HMAC-SHA256 의 앞 12자이고, 비밀키는 이미지를
-빌드할 때 한 번 뽑아 박습니다. 그래서 같은 이미지에서 뜬 컨테이너끼리는 토큰이 같고,
-`billing-intake` 가 만든 토큰을 `billing-review` 가 그대로 씁니다.
+**AI 쪽 실행에는 데이터베이스가 없습니다.** postgres 서비스도, 조회 도구도, 환자를
+가리키는 값도 없습니다. 판단에 쓸 진료행은 이미 `claims.json` 으로 와 있습니다.
+없는 것을 막을 필요는 없습니다.
 
-함수가 아니라 컬럼인 이유가 있습니다. 뷰가 함수를 부르면 EXECUTE 권한을 **호출자**
-에게 줘야 하고, 그러면 AI 가 `P00001`…`P00050` 을 넣어 토큰을 되짚을 수 있습니다.
-컬럼으로 굳히면 함수 권한을 하나도 줄 필요가 없습니다.
-ID→토큰을 돌려주는 `public.resolve_patient_token` 은 앱 자격증명만 부를 수 있습니다.
+전에는 환자 ID 를 `patient_token`(HMAC) 으로 바꿔 AI 가 그 토큰으로 직접 SQL 을
+쓰게 했습니다. 걷어냈습니다 — AI 가 조회하지 않으면 가리킬 값도 필요 없고,
+이미지 빌드 때 비밀키를 박는 기계도, 그 비밀키가 실행마다 달라져 조회가 0건이 되던
+버그도 함께 사라집니다.
 
-`llm_reader` 역할은 `llm.claim` 뷰 하나만 읽습니다. 아래는 **뷰에 열 자체가 없습니다.**
+`llm.claim` 뷰가 "AI 에게 나갈 수 있는 열" 의 정의입니다. 아래는 **뷰에 열 자체가 없습니다.**
 
 ```
-patient_id  patient_name  birth_date  mobile_phone  resident_id_token
-treatment_id  encounter_id
+patient_name  birth_date  mobile_phone  resident_id_token  treatment_id  encounter_id
 ```
+
+`patient_id` 는 뷰에 있습니다 — 조회를 그 열로 걸어야 하기 때문입니다. 대신
+`llm_reader` 에게는 **그 열만 빼고** 권한을 줍니다(열 단위 `GRANT`). 그래서 대시보드를
+굽는 쪽도 환자 ID 를 읽지 못하고, `SELECT *` 는 아예 권한 오류가 납니다.
 
 나이는 진료일 기준으로 계산되어 들어가고, 생년월일은 나가지 않습니다.
-환자 단위 연결이 필요한 판단(이전 치료 여부, 치료 횟수)은 `patient_token` 으로 합니다 —
-이미지마다 새로 뽑는 비밀키로 HMAC 한 값이라 되짚을 수 없고, **AI 는 토큰을 받기만 하고
-만들지는 못합니다**(토큰 계산 함수에 권한이 없습니다).
 
 경계는 관례가 아니라 DB 가 강제합니다:
 
@@ -144,11 +147,14 @@ $ psql -U llm_reader -d billing
 billing=> SELECT count(*) FROM claim;
  50
 
+billing=> SELECT patient_id FROM claim LIMIT 1;
+ERROR:  permission denied for column patient_id of relation claim
+
+billing=> SELECT * FROM claim LIMIT 1;
+ERROR:  permission denied for column patient_id of relation claim
+
 billing=> SELECT patient_name FROM public.patient_master;
 ERROR:  permission denied for schema public
-
-billing=> SELECT private.token('PT','P00001');
-ERROR:  permission denied for schema private
 
 billing=> CREATE TABLE probe(x int);
 ERROR:  cannot execute CREATE TABLE in a read-only transaction
@@ -285,13 +291,13 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │   └── workflows/
 │       ├── shared/billing-db.md      # DB 서비스 · query-billing-db 도구 (공용)
 │       ├── hira-rule-sync.md         # 0-1: 매일 아침 규정 동기화
-│       ├── billing-intake.yml        # 1~2: 환자ID를 토큰으로 → 호출
-│       ├── billing-review.md         # 3: 청구 판단 → 내려받는 HTML 보고서
+│       ├── billing-intake.yml        # 1~2: 환자ID로 조회 → 식별정보 제거 → 호출
+│       ├── billing-review.md         # 3: 받은 진료행으로 판단 → HTML 보고서
 │       ├── build-dashboard.yml       # 청구 현황 → site/index.html
 │       └── publish-db-image.yml      # DB 이미지 → 본인 GHCR
 ├── db/
 │   ├── Dockerfile
-│   ├── init.sql                      # 2테이블 + 토큰화 + llm.claim 뷰 + llm_reader + 빌드 게이트
+│   ├── init.sql                      # 2테이블 + llm.claim 뷰 + 열 단위 권한 + 빌드 게이트
 │   ├── test-access.sh                # 경계 검사 (compose 또는 이미지 대상)
 │   └── data/                         # 환자 50명 · 진료 50건 (합성, 실제 수가코드)
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
