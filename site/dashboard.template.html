@@ -386,7 +386,18 @@
   function tok(){ try { return localStorage.getItem(KEY) || ""; } catch(e){ return ""; } }
   function say(t, kind){ var m=$("msg"); m.textContent = t || "";
                          m.className = "msg" + (kind ? " "+kind : ""); }
-  function base(){ return (META.server || "https://github.com") + "/" + (META.repo || ""); }
+  // 어느 저장소를 부를지는 페이지 주소에서 먼저 찾는다.
+  // 템플릿에서 갈라져 나온 저장소에는 이 파일이 원본 저장소 이름이 구워진 채로
+  // 들어 있다 — 자기 대시보드를 한 번 굽기 전까지 남의 저장소를 부르게 된다.
+  function repoFromURL(){
+    var m = /^([^.]+)\.github\.io$/.exec(location.hostname);
+    if(!m) return "";
+    var seg = location.pathname.split("/").filter(function(s){ return s; });
+    if(seg.length && seg[0].indexOf(".") < 0) return m[1] + "/" + seg[0];
+    return m[1] + "/" + location.hostname;
+  }
+  var REPO = repoFromURL() || META.repo || "";
+  function base(){ return (META.server || "https://github.com") + "/" + REPO; }
   function pid(){ return ($("pid").value || "").trim().toUpperCase(); }
   function busy(on){ $("go").disabled = on; $("go").textContent = on ? "요청 중…" : "진료비 확인"; }
 
@@ -426,10 +437,10 @@
     if(!/^P\d{5}$/.test(v)){ say("환자 ID 는 P00013 처럼 P + 5자리입니다.", "bad"); return; }
     var t = tok();
     if(!t){ handoff(v); return; }
-    if(!META.repo){ say("저장소를 알 수 없습니다. Actions 에서 직접 실행해 주세요.", "bad"); return; }
+    if(!REPO){ say("저장소를 알 수 없습니다. Actions 에서 직접 실행해 주세요.", "bad"); return; }
 
     busy(true); say("워크플로를 부르는 중…");
-    fetch("https://api.github.com/repos/" + META.repo +
+    fetch("https://api.github.com/repos/" + REPO +
           "/actions/workflows/billing-intake.yml/dispatches", {
       method: "POST",
       headers: { "Accept": "application/vnd.github+json",
@@ -459,7 +470,7 @@
     });
   };
 
-  if(!META.repo) $("go").title = "저장소 정보 없이 구워진 화면입니다";
+  if(!REPO) $("go").title = "저장소 정보 없이 구워진 화면입니다";
 
   render();
 })();
