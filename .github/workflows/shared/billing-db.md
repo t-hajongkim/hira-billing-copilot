@@ -22,7 +22,6 @@ services:
       POSTGRES_DB: billing
       POSTGRES_USER: billing
       POSTGRES_PASSWORD: billing
-      LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
     ports:
       - 5432:5432
     options: >-
