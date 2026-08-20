@@ -10,23 +10,56 @@
 
 ```mermaid
 flowchart TD
-    A["매일 06:00 KST<br/>hira-rule-sync"] --> B["PR: rules/HIRA_RULES.md<br/>공고일·시행일·대상 코드"]
-    B -->|원무 담당자가 머지| C["규정 Knowledge Base 갱신"]
-    D["원무 담당자<br/>대시보드에 환자 ID 입력"] --> E["워크플로가 환자 ID → 토큰 변환<br/>(AI 에 전달되지 않음)"]
-    E --> F["llm.claim 뷰 조회<br/>비식별 진료정보"]
-    F --> G["AI"]
-    C --> G
-    G --> H["실행 Artifacts 에서 내려받는<br/>HTML 판단 보고서"]
+    A["<b>0-1</b> 심평원 규정 업데이트<br/>hira-rule-sync"] --> A2["PR: rules/HIRA_RULES.md<br/>공고일·시행일·대상 코드"]
+    A2 -->|원무 담당자가 머지| KB["규정 Knowledge Base"]
+    B["<b>0-2</b> 환자·진료 Database<br/>publish-db-image"] --> DB[("GHCR 이미지<br/>llm.claim 뷰")]
+
+    C["<b>1</b> 원무부 요청<br/>대시보드에 환자 ID 입력"] --> D["<b>2</b> SQL 조회<br/>환자 ID → 토큰 · 비식별 진료행"]
+    DB --> D
+    D --> E["<b>3</b> AI 청구 판단"]
+    KB --> E
+    E --> F["<b>4</b> 결과 반환<br/>실행 Artifacts 의 HTML 보고서"]
 ```
 
-| 단계 | 워크플로 | 트리거 | 산출물 |
-|---|---|---|---|
-| 0-1. 규정 동기화 | `hira-rule-sync.md` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
-| 0-2. 환자/진료 DB | `db/` | — | GHCR 이미지 |
-| 1~3. 청구 판단 | `billing-intake.yml` → `billing-review.md` | 대시보드 · Actions | 실행 Artifact `billing-report` |
-| 현황 대시보드 | `build-dashboard.yml` | 이미지 게시 후 · 수동 | `site/index.html` |
+| 단계 | 하는 일 | 구현 | 트리거 | 산출물 |
+|---|---|---|---|---|
+| **0-1** | 심평원 규정 업데이트 | `hira-rule-sync.md` · `tools/fetch_notices.py` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
+| **0-2** | 환자 / 진료 Database | `db/init.sql` · `db/Dockerfile` | `publish-db-image` 수동 1회 | GHCR 이미지 |
+| **1** | 원무부 요청 | `site/index.html` → `billing-intake.yml` | 대시보드 **진료비 확인** | `workflow_dispatch` 실행 |
+| **2** | SQL 조회 | `billing-intake.yml` · `shared/billing-db.md` | 1 에 이어서 | `patient_token` · 비식별 진료행 |
+| **3** | AI 청구 판단 | `billing-review.md` | 2 가 호출 | 판단 마크다운 (게시 안 함) |
+| **4** | 결과 반환 | `tools/render_report.py` (post-steps) | 3 직후 | 실행 Artifact `billing-report` |
+| **—** | 현황 대시보드 | `build-dashboard.yml` · `tools/build_dashboard.py` | 이미지 게시 후 · 수동 | `site/index.html` · Pages |
 
-규정 동기화는 PR 을 만들 뿐 스스로 머지하지 않습니다. **머지가 곧 담당자의 확인입니다.**
+### 단계별로 무슨 일이 일어나나
+
+**0-1 — 심평원 규정 업데이트.** 매일 새벽 심평원 공지사항을 훑어 청구에 닿는 변경만
+골라 `rules/HIRA_RULES.md` 에 **추가하는** PR 을 엽니다. 기존 항목은 지우지 않습니다.
+수집은 방화벽 밖 `steps:` 에서 파이썬이 하고, 무엇이 우리 청구에 닿는지 고르는 판단만
+AI 가 합니다. 접속 자체가 실패하면 조용히 넘어가지 않고 알립니다.
+
+**0-2 — 환자 / 진료 Database.** 테이블 두 개(`patient_master`, `treatment_claim`)와
+비식별 뷰 `llm.claim`, 그 뷰 하나만 읽는 `llm_reader` 역할까지 `db/init.sql` 하나에
+들어 있습니다. 이미지를 빌드할 때 경계 게이트가 돌아, 식별 열이 뷰에 새어 든 이미지는
+아예 만들어지지 않습니다.
+
+**1 — 원무부 요청.** 대시보드에서 환자 ID 를 넣고 **진료비 확인** 을 누릅니다.
+`billing-intake` 가 `workflow_dispatch` 로 뜹니다. 저장소에는 아무것도 남지 않습니다.
+
+**2 — SQL 조회.** 환자 ID 는 `billing-intake` 안에서 앱 자격증명으로
+`patient_token` 이 되고 **거기서 끝납니다.** 이어서 AI 는 `query-billing-db` 로
+`llm.claim` 뷰만 조회합니다 — 이름·생년월일·환자 ID 는 뷰에 열 자체가 없습니다.
+
+**3 — AI 청구 판단.** 진료건마다 `rules/HIRA_RULES.md` 와 대조해
+**급여 인정 / 조건부 / 불인정** 을 가릅니다. 이때 **진료일이 시행일 이후인지** 를
+먼저 봅니다. 금액은 산술로 검산하되 **고쳐 쓰지 않고 어긋났다고 보고합니다.**
+
+**4 — 결과 반환.** 판단 결과는 이슈·PR·커밋 어디에도 게시되지 않습니다.
+같은 실행 안에서 `render_report.py` 가 HTML 로 굽고, 실행 Artifacts 의
+`billing-report` 로만 내려받습니다. 7일 뒤 사라집니다.
+
+규정 동기화(0-1)는 PR 을 만들 뿐 스스로 머지하지 않습니다.
+**머지가 곧 담당자의 확인입니다.**
 
 ## 판단 결과를 저장소에 남기지 않는 이유
 
@@ -157,6 +190,22 @@ GitHub 은 익명 요청으로 워크플로를 시작해 주지 않습니다. �
   붙여넣고 **Run workflow** 를 누르면 됩니다.
 
 어느 쪽이든 결과는 실행 페이지 아래 **Artifacts → `billing-report`** 입니다.
+
+### 판단에 쓸 모델 고르기
+
+대시보드의 드롭다운(또는 Actions 실행 폼의 **model**)에서 고릅니다.
+`billing-intake` 가 그 값을 `billing-review` 로 넘기고, `billing-review` 의
+최상위 `model:` 이 그대로 받습니다.
+
+| 값 | 뜻 |
+|---|---|
+| `auto` (기본) | Copilot 이 알아서 고릅니다. 어떤 요금제에서든 돕니다 |
+| `sonnet` · `opus` · `haiku` | Claude 계열 |
+| `gpt-5` | OpenAI 계열 |
+| `gemini-pro` | Google 계열 |
+
+`auto` 외의 값은 **요금제에 따라 거절될 수 있습니다.** 거절되면 그 실행이
+실패하므로, 되는 것을 확인한 뒤에 쓰세요.
 
 시크릿은 없습니다. `llm_reader` 비밀번호는 이미지에 고정돼 있는데, 그 역할은
 `llm.claim` 뷰 하나만 읽을 수 있어 비밀번호를 알아도 더 가져갈 게 없습니다.

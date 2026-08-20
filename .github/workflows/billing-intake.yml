@@ -20,6 +20,15 @@ on:
         description: "진료일 (YYYY-MM-DD, 비우면 전체 기간)"
         required: false
         default: ""
+      # 판단에 쓸 모델을 실행할 때 고른다. 이슈에 코파일럿을 붙여 고르던 것을
+      # 여기로 옮겼다 — 요청이 이슈로 들어오지 않게 되면서 그 화면이 없어졌다.
+      # auto 는 Copilot 이 알아서 고른다. 나머지는 요금제에 따라 안 될 수 있다.
+      model:
+        description: "판단에 쓸 모델"
+        required: false
+        type: choice
+        default: auto
+        options: [auto, sonnet, opus, haiku, gpt-5, gemini-pro]
 
 permissions:
   contents: read
@@ -96,12 +105,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # auto 는 gh aw 에서 "지정 안 함" 이다. 빈 값으로 넘겨야 Copilot 이 고른다.
+          MODEL="${{ inputs.model }}"
+          [ "$MODEL" = "auto" ] && MODEL=""
+
           gh workflow run billing-review.lock.yml --repo "${{ github.repository }}" \
             -f patient_token="${{ steps.resolve.outputs.token }}" \
-            -f treatment_date="${{ steps.resolve.outputs.treatment_date }}"
+            -f treatment_date="${{ steps.resolve.outputs.treatment_date }}" \
+            -f model="$MODEL"
 
           {
             echo "## 진료비 판단을 시작했습니다"
+            echo
+            echo "모델: \`${{ inputs.model }}\`"
             echo
             echo "결과는 **billing-review** 실행의 Artifacts 에 \`billing-report\` 로 올라옵니다."
             echo "이슈·PR·커밋 어디에도 남기지 않습니다."

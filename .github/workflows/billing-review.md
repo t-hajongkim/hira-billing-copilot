@@ -11,6 +11,14 @@ on:
         description: 진료일 필터 (비우면 전체)
         required: false
         type: string
+      model:
+        description: 판단에 쓸 모델 (비우면 auto)
+        required: false
+        type: string
+        default: ""
+# 실행할 때 고른 모델을 그대로 쓴다. 비우면 auto —
+# Copilot 이 알아서 고르고, 어떤 요금제에서든 돈다.
+model: ${{ inputs.model }}
 env:
   PATIENT_TOKEN: ${{ inputs.patient_token }}
   TREATMENT_DATE: ${{ inputs.treatment_date }}
@@ -75,7 +83,7 @@ timeout-minutes: 30
 
 **환자 ID·이름·생년월일은 당신에게 오지 않는다.** 뷰에 열 자체가 없다.
 `PATIENT_TOKEN` 은 되돌릴 수 없고, 다른 값의 토큰을 만들 수도 없다.
-이슈 본문도 받지 않는다 — 거기엔 환자 ID 가 들어 있기 때문이다.
+요청 원문도 받지 않는다 — 거기엔 환자 ID 가 들어 있기 때문이다.
 
 ## 답을 내는 방법
 
