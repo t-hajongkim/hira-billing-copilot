@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 .DS_Store
+
+# 방화벽 밖에서 받아 온 공고 캐시. 커밋하지 않는다.
+.hira-fetch/
