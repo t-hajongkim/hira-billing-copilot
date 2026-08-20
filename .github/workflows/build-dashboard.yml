@@ -70,8 +70,10 @@ jobs:
       - name: 자립성 확인
         run: |
           set -e
-          body=$(sed '1,20d' site/index.html)
-          for pat in 'fetch(' 'type="module"' 'import('; do
+          # 주석은 검사에서 뺀다 — 규칙을 설명하는 글이 규칙 위반으로 잡힌다.
+          body=$(sed '/<!--/,/-->/d' site/index.html)
+
+          for pat in 'type="module"' 'import(' 'importScripts(' '<script src' 'XMLHttpRequest'; do
             if printf '%s' "$body" | grep -qF "$pat"; then
               echo "::error::대시보드가 자립성을 잃었습니다: $pat"
               exit 1
@@ -81,7 +83,27 @@ jobs:
             echo "::error::외부 리소스를 참조합니다."
             exit 1
           fi
-          echo "자립성 OK — 오프라인에서 열립니다."
+
+          # 나가는 요청은 딱 하나만 허용한다 — 워크플로를 부르는 GitHub API.
+          # 화면 데이터를 밖에서 끌어오기 시작하면 오프라인에서 못 연다.
+          n=$(printf '%s' "$body" | grep -c 'fetch(' || true)
+          if [ "$n" -gt 1 ]; then
+            echo "::error::fetch 가 $n 곳입니다. 워크플로 호출 하나만 허용됩니다."
+            exit 1
+          fi
+          if [ "$n" -eq 1 ] && ! printf '%s' "$body" | grep -q 'fetch("https://api.github.com/'; then
+            echo "::error::fetch 가 api.github.com 이 아닌 곳을 부릅니다."
+            exit 1
+          fi
+
+          hosts=$(printf '%s' "$body" | grep -oE 'https?://[a-zA-Z0-9.-]+' | sort -u |
+                  grep -vE '^https://(api\.)?github\.com$' || true)
+          if [ -n "$hosts" ]; then
+            echo "::error::허용되지 않은 호스트: $hosts"
+            exit 1
+          fi
+
+          echo "자립성 OK — 화면은 오프라인에서 열리고, 나가는 요청은 워크플로 호출뿐입니다."
 
       - name: 변경 있으면 커밋
         run: |

@@ -1,14 +1,10 @@
 ---
-description: Judge one patient's claims against the current HIRA rules and report back on the issue.
+description: Judge one patient's claims against the current HIRA rules and produce a downloadable report.
 on:
   workflow_dispatch:
     inputs:
       patient_token:
         description: 환자 토큰 (billing-intake 가 환자 ID 를 바꿔 넘긴다)
-        required: true
-        type: string
-      issue_number:
-        description: 결과를 남길 이슈 번호
         required: true
         type: string
       treatment_date:
@@ -25,15 +21,46 @@ permissions:
 imports:
   - shared/billing-db.md
 safe-outputs:
+  # staged 는 "만들되 게시하지 않는다" 는 뜻이다. 에이전트에게 출력 창구는 주되,
+  # 이슈·PR·커밋 어디에도 남기지 않는다. 판단 결과에는 그 환자의 진료 내용이
+  # 들어 있고, 레포에 남기면 레포를 볼 수 있는 사람 모두에게 계속 남는다.
+  # 아래 post-steps 가 그 출력을 HTML 로 바꿔 내려받게 한다.
+  staged: true
   add-comment:
-    target: ${{ inputs.issue_number }}
+    target: "*"
+post-steps:
+  - name: 결과 HTML 굽기
+    if: always()
+    env:
+      REPORT_DATE: ${{ github.run_started_at }}
+    run: |
+      python3 tools/render_report.py         --input /tmp/gh-aw/safeoutputs.jsonl         --out "$RUNNER_TEMP/billing-report.html"
+
+  - name: 결과 파일 올리기
+    if: always()
+    uses: actions/upload-artifact@v7
+    with:
+      name: billing-report
+      path: ${{ runner.temp }}/billing-report.html
+      retention-days: 7
+
+  - name: 내려받는 곳
+    if: always()
+    run: |
+      {
+        echo "## 진료비 판단 결과"
+        echo
+        echo "이 실행 페이지 아래 **Artifacts** 의 \`billing-report\` 를 내려받아 여세요."
+        echo
+        echo "결과는 여기에만 있습니다 — 이슈·PR·커밋 어디에도 남기지 않습니다."
+      } >> "$GITHUB_STEP_SUMMARY"
 timeout-minutes: 30
 ---
 
 # 진료비 청구 판단
 
 원무 담당자가 환자 한 명의 진료비를 물었다. 그 환자의 진료내역과 현재 심평원 규정을
-대조해 청구 가능 여부와 예상 진료비를 판단하고, 근거와 함께 이슈에 답한다.
+대조해 청구 가능 여부와 예상 진료비를 판단하고, 근거와 함께 보고서로 낸다.
 
 ## 당신이 받는 것
 
@@ -45,6 +72,8 @@ timeout-minutes: 30
 **환자 ID·이름·생년월일은 당신에게 오지 않는다.** 뷰에 열 자체가 없다.
 `PATIENT_TOKEN` 은 되돌릴 수 없고, 다른 값의 토큰을 만들 수도 없다.
 이슈 본문도 받지 않는다 — 거기엔 환자 ID 가 들어 있기 때문이다.
+
+당신의 답은 **내려받는 HTML 보고서 하나**가 된다. 이슈에도 PR 에도 커밋에도 남지 않는다.
 
 ## Task
 
@@ -64,7 +93,7 @@ timeout-minutes: 30
    ```
 
    `TREATMENT_DATE` 가 있으면 `AND treatment_date = '<TREATMENT_DATE>'` 를 붙인다.
-   조회 결과가 없으면 그 사실만 이슈에 적고 끝낸다. 지어내지 않는다.
+   조회 결과가 없으면 그 사실만 적고 끝낸다. 지어내지 않는다.
 
 2. 판단에 쓸 환자 조건을 정리한다 — 나이, 성별, 보험 유형(`insurance_type`),
    자격(`insurance_eligibility`), 본인부담 구분(`copayment_type`),
@@ -102,7 +131,7 @@ timeout-minutes: 30
    `copayment_rate` 와 맞는지 산술로 검증한다. 어긋나면 그 사실을 적는다 —
    **금액을 고쳐 쓰지 말고, 어긋났다고 보고한다.**
 
-7. 결과를 이슈에 댓글로 남긴다. 형식은 아래 그대로.
+7. 결과를 낸다. 형식은 아래 그대로 — 이 마크다운이 그대로 표가 있는 HTML 로 바뀐다.
 
    ```markdown
    ## 진료비 확인 결과
@@ -140,5 +169,5 @@ timeout-minutes: 30
 - 금액만 답하지 않는다. **적용 규정·시행일·판단 근거를 반드시 함께 적는다.**
   담당자가 검증할 수 없는 답은 쓸모가 없다.
 - 규정에 없는 조건을 만들어 내지 않는다. 판단이 안 서면 "조건부"로 두고 무엇이 필요한지 적는다.
-- 환자 단위 행이나 토큰을 댓글에 그대로 쓰지 않는다. 진료 건 단위 판단으로 적는다.
+- 환자 단위 행이나 토큰을 보고서에 그대로 쓰지 않는다. 진료 건 단위 판단으로 적는다.
 - 이 답변은 원무 담당자의 확인이 필요한 참고자료다. 마지막에 그 사실을 한 줄로 적는다.
