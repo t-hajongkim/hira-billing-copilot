@@ -17,8 +17,8 @@ flowchart TD
         SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"] --> PR["PR: 규정 추가<br/>공고일 · 시행일 · 대상 코드"]
     end
 
-    subgraph HITL1["Human in the loop · 규정 승인"]
-        MERGE["담당자가 읽고 머지"]
+    subgraph APPROVE["규정 승인 · 담당자가 한다"]
+        MERGE["읽고 머지<br/>rules/HIRA_RULES.md 갱신"]
     end
 
     subgraph WORK["원무부 요청"]
@@ -26,13 +26,12 @@ flowchart TD
         JOIN --> AI["AI 청구 판단<br/>진료일과 시행일 대조"]
     end
 
-    subgraph HITL2["Human in the loop · 결과 확인"]
+    subgraph CONFIRM["결과 확인 · 담당자가 한다"]
         REPORT["결과 확인용 HTML 보고서"] --> CHECK["기록에 남지 않는 결과 확인"]
     end
 
     PR --> MERGE
-    MERGE --> KB["규정 Knowledge Base<br/>rules/HIRA_RULES.md"]
-    KB --> AI
+    MERGE --> AI
     VIEW --> JOIN
     AI --> REPORT
 ```
