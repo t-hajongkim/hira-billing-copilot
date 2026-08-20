@@ -10,32 +10,7 @@ AI는 데이터베이스에 접속하지 않습니다 — 조회는 워크플로
 
 ## 파이프라인
 
-```mermaid
-flowchart TD
-    subgraph SETUP["기본 설정 · 사용자 개입 없음"]
-        IMG["DB 이미지<br/>환자 50명 · 진료 50건"] --> VIEW["확인용 View<br/>llm.claim — 식별 열이 없다"]
-        SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"] --> PR["PR: 규정 추가<br/>공고일 · 시행일 · 대상 코드"]
-    end
-
-    subgraph APPROVE["규정 승인 · 담당자가 한다"]
-        MERGE["읽고 머지<br/>rules/HIRA_RULES.md 갱신"]
-    end
-
-    subgraph WORK["원무부 요청"]
-        PID["환자 ID"] --> JOIN["SQL 조인<br/>결과에서 환자 ID 제거"]
-        JOIN --> AI["AI 청구 판단<br/>진료일과 시행일 대조"]
-    end
-
-    subgraph CONFIRM["결과 확인 · 담당자가 한다"]
-        REPORT["결과 확인용 HTML 보고서"] --> CHECK["기록에 남지 않는 결과 확인"]
-    end
-
-    PR --> MERGE
-    MERGE --> AI
-    VIEW --> JOIN
-    AI --> REPORT
-```
-
+![청구 판단 파이프라인](docs/pipeline.png)
 
 | 단계 | 워크플로 | 트리거 | 산출물 |
 |---|---|---|---|
@@ -86,18 +61,9 @@ AI가 보는 것은 `llm.claim` 뷰 하나입니다. 이름·생년월일·연�
 그래서 `SELECT *` 조차 권한 오류가 납니다. 이 경계는 `db/init.sql` 끝의 게이트가
 **이미지를 빌드하는 중에** 확인하므로, 경계가 열린 이미지는 만들어지지 않습니다.
 
-### 무엇이 어디에 얼마나 남나
-
-| 어디 | 남는 것 | 수명 |
-|---|---|---|
-| 저장소 (git · 이슈 · PR) | 없음 | — |
-| 실행 로그 | 없음 | — |
-| 요청 실행의 입력값 | 환자 번호 | 30분 |
-| 판단 실행의 입력값 | 비식별 진료행 | 7일 |
-| Artifact `billing-report` | 판단 보고서 | 7일 |
-
-깃헙은 "실행할 때 무엇을 넣었나"를 그 실행에 붙여 둡니다. 이건 부르는 쪽이 무엇이든
-같아서 없앨 수 없고, 그래서 `sweep-runs`가 30분마다 지난 요청 실행을 지웁니다.
+요청과 판단은 저장소에 남지 않습니다. 환자 번호가 닿는 곳은 요청 실행의 입력값 한 곳뿐이고,
+`sweep-runs`가 30분마다 지난 실행을 지웁니다. 자세한 것은 [실습 안내](instructions.md)에
+표로 적어 두었습니다.
 
 ## 시작하기
 
@@ -151,6 +117,7 @@ python3 tools/render_report.py --check     # 보고서 변환기 자체 점검
 │   ├── publish-db-image.yml          # DB 이미지 → 본인 GHCR
 │   └── sweep-runs.yml                # 지난 요청 실행 만료 (30분 / 7일)
 ├── db/                               # PostgreSQL 이미지, llm.claim 뷰, 합성 데이터
+├── docs/pipeline.png                 # 파이프라인 그림
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
 ├── tools/
 │   ├── fetch_notices.py              # 심평원·복지부 공고 수집
