@@ -175,10 +175,16 @@
   .sheet .have{margin:0 0 12px;padding:12px 14px;border-radius:13px;background:var(--accent-bg);
     font-size:12.5px;font-weight:700;line-height:1.6;color:#6d5600}
   .sheet .have b{font-variant-numeric:tabular-nums}
-  .sheet .mk{display:flex;align-items:center;justify-content:center;height:40px;
-    margin:14px 0 4px;border-radius:12px;background:var(--ink);color:#fff;font-size:13px;
+  .sheet .step{display:flex;align-items:center;gap:10px;margin:14px 0 4px}
+  .sheet .no{width:20px;height:20px;flex:none;border-radius:50%;background:var(--line);
+    color:var(--dim);font-size:11px;font-weight:800;display:flex;align-items:center;
+    justify-content:center}
+  .sheet .step.on .no{background:var(--ink);color:#fff}
+  .sheet .mk{flex:1;display:flex;align-items:center;justify-content:center;height:40px;
+    border-radius:12px;background:var(--ink);color:#fff;font-size:13px;
     font-weight:750;text-decoration:none;letter-spacing:-.2px}
   .sheet .mk:hover{background:#000}
+  .sheet .step input{margin:0}
   .sheet .row2{display:flex;gap:8px;justify-content:flex-end}
   .sheet .row2 button{height:35px;border-radius:11px;border:1px solid var(--line);cursor:pointer;
     font-size:12.5px;font-weight:750;padding:0 15px;background:var(--card)}
@@ -297,12 +303,16 @@
     <p><b>이미 만들어 둔 토큰이 있으면 만들지 마세요</b> — 아래 칸에 붙여넣으면 됩니다.
        깃헙은 한 번 만든 토큰 값을 다시 보여 주지 않으니, 어디에 적어 두지 않았다면
        찾는 것보다 새로 만드는 쪽이 빠릅니다.</p>
-    <p>새로 만든다면 아래를 누르세요. 권한(<code>repo</code>)이 미리 체크된 발급 화면이
-       열립니다 → <b>Generate token</b> → 나온 값을 붙여넣으세요.</p>
-    <a class="mk" target="_blank" rel="noopener"
-       href="https://github.com/settings/tokens/new?scopes=repo&amp;description=HIRA+Billing+Copilot">토큰 만들기 →</a>
-    <input id="tok" type="password" autocomplete="off" spellcheck="false"
-           placeholder="ghp_… 또는 github_pat_… 를 붙여넣으세요">
+    <p>새로 만든다면 <b>1</b> 을 누르세요. 권한(<code>repo</code>)이 미리 체크된 발급 화면이
+       열립니다 → <b>Generate token</b> → 나온 값을 <b>2</b> 에 붙여넣으세요.</p>
+    <div class="step" id="step1"><span class="no">1</span>
+      <a class="mk" target="_blank" rel="noopener"
+         href="https://github.com/settings/tokens/new?scopes=repo&amp;description=HIRA+Billing+Copilot">토큰 만들기 →</a>
+    </div>
+    <div class="step" id="step2"><span class="no">2</span>
+      <input id="tok" type="password" autocomplete="off" spellcheck="false"
+             placeholder="ghp_… 또는 github_pat_… 를 붙여넣으세요">
+    </div>
     <div class="say" id="cfgSay"></div>
     <p style="margin-bottom:0">더 좁게 주려면
        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank"
@@ -312,7 +322,7 @@
       <button id="cfgClear">최근 기록 지우기</button>
       <button id="cfgForget" hidden>토큰 지우기</button>
       <button id="cfgCancel">닫기</button>
-      <button class="prim" id="cfgSave">확인하고 저장</button>
+      <button class="prim" id="cfgSave"><span class="no" style="margin-right:7px">3</span>확인하고 저장</button>
     </div>
   </div>
 </div>
@@ -696,6 +706,16 @@
                                                          : "fine-grained 토큰") + " · " + REPO + " 확인됨" };
   }
 
+  function stage() {
+    // 지금 서 있는 단계를 표시한다. 빈 칸에서 저장을 누르면 막다른 길이 되는데,
+    // 그 화면에는 "다음에 뭘 해야 하는지" 가 없었다.
+    var typed = ($("tok").value || "").trim().length > 0;
+    var have = !!tok();
+    $("step1").className = "step" + (typed || have ? "" : " on");
+    $("step2").className = "step" + (typed ? " on" : "");
+    $("cfgSave").disabled = !typed && !have;
+  }
+
   function openCfg() {
     var have = tok();
     $("tok").value = "";
@@ -706,6 +726,7 @@
     $("cfgWhy").hidden = !!have;
     cfgSay("");
     $("cfg").hidden = false;
+    stage();
     $("tok").focus();
     if (have) {
       $("cfgHave").innerHTML = "이 브라우저에 토큰이 이미 들어 있습니다 — <b>" +
@@ -714,6 +735,7 @@
       verify(have).then(function (r) { cfgSay(r.msg, r.ok ? "ok" : "bad"); });
     }
   }
+  $("tok").oninput = function () { stage(); cfgSay(""); };
   $("cfgBtn").onclick = function () { pending = null; openCfg(); };
   $("cfgCancel").onclick = function () { $("cfg").hidden = true; pending = null; };
   $("cfgClear").onclick = function () {
@@ -738,7 +760,7 @@
     if (!v) {
       // 이미 들어 있으면 그대로 쓴다. 비운다고 지우지 않는다 — 지우기는 따로 있다.
       if (tok()) { keep(); return; }
-      cfgSay("붙여넣은 값이 없습니다.", "bad");
+      cfgSay("붙여넣은 값이 없습니다 — 토큰이 없으면 <b>1 토큰 만들기</b> 를 먼저 누르세요.", "bad");
       return;
     }
     $("cfgSave").disabled = true;
@@ -749,6 +771,7 @@
     try { localStorage.setItem(TOKEN_KEY, v); }
     catch (e) { cfgSay("이 브라우저에 저장할 수 없습니다.", "bad"); return; }
     $("tok").value = "";
+    stage();
     keep();
   };
 
