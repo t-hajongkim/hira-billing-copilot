@@ -108,8 +108,8 @@ def judge(claim: dict, rules: list[dict]) -> dict:
             })
         elif not applies and r["effective"] and "신설" in r["kind"]:
             flags.append({
-                "level": "warn",
-                "text": f"이 코드는 {r['effective']} 신설입니다. 진료일({tdate})이 시행일보다 앞섭니다.",
+                "level": "danger",
+                "text": f"이 코드는 {r['effective']} 신설입니다. 진료일({tdate})이 시행일보다 앞서 급여로 청구할 수 없습니다.",
             })
 
     # 금액 검산 — 고치지 않고 어긋난 사실만 보고한다.
@@ -186,6 +186,12 @@ def self_check() -> int:
 
     bad = {**sample, "patient_charge_krw": "50000"}
     assert any("본인부담금" in f["text"] for f in judge(bad, rules)["flags"]), "금액 검산이 동작하지 않습니다"
+
+    before_effective = {**sample, "treatment_date": "2026-01-01"}
+    before_judgement = judge(before_effective, rules)
+    assert before_judgement["verdict"] == "불인정", "시행일 전 신설 코드는 불인정이어야 합니다"
+    assert before_judgement["flags"][0]["level"] == "danger", \
+        "시행일 전 신설 코드는 위험 플래그여야 합니다"
 
     print(f"빌드 로직 OK — 규정 {len(rules)}건, 코드 붙은 규정 {len(with_codes)}건")
     return 0
