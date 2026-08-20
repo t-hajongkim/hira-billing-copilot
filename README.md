@@ -127,14 +127,19 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 
 1. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests** 활성화
 2. Actions → **publish-db-image** 를 한 번 실행
-3. Settings → Pages → Source: **Deploy from a branch** → `main` / `/site` (선택)
+3. Settings → Pages → Source: **GitHub Actions** (선택)
 
 2번이 **본인 GHCR 에** DB 이미지를 만듭니다. 워크플로는 이미지를
 `ghcr.io/<본인 아이디>/hira-billing-db` 로 참조하므로, 남의 패키지에 접근 권한을
 받을 일도 collaborator 를 추가할 일도 없습니다. 본인 것만 보면 됩니다.
 
 3번은 대시보드를 웹으로 여는 것뿐입니다. 안 켜도 `site/index.html` 을 내려받아
-더블클릭하면 똑같이 동작합니다.
+더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만
+건너뜁니다(대시보드는 그대로 커밋됩니다).
+
+Pages 사이트는 **인터넷에 공개됩니다.** 올라가는 값은 `llm.claim` 뷰에서 온
+비식별 합성 데이터뿐이고 환자 이름·ID·생년월일은 뷰에 열 자체가 없지만,
+**실제 병원 데이터를 넣는다면 Pages 를 끄십시오.**
 
 ### 대시보드에서 진료비 확인 요청하기
 
