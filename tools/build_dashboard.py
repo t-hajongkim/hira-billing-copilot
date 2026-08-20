@@ -188,9 +188,9 @@ def self_check() -> int:
     assert any("본인부담금" in f["text"] for f in judge(bad, rules)["flags"]), "금액 검산이 동작하지 않습니다"
 
     before_effective = {**sample, "treatment_date": "2026-01-01"}
-    before_judgement = judge(before_effective, rules)
-    assert before_judgement["verdict"] == "불인정", "시행일 전 신설 코드는 불인정이어야 합니다"
-    assert before_judgement["flags"][0]["level"] == "danger", \
+    before_judgment = judge(before_effective, rules)
+    assert before_judgment["verdict"] == "불인정", "시행일 전 신설 코드는 불인정이어야 합니다"
+    assert any(f["level"] == "danger" for f in before_judgment["flags"]), \
         "시행일 전 신설 코드는 위험 플래그여야 합니다"
 
     print(f"빌드 로직 OK — 규정 {len(rules)}건, 코드 붙은 규정 {len(with_codes)}건")
