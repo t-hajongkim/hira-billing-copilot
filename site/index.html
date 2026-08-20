@@ -687,6 +687,8 @@
     try { u = await fetch(API + "/user", { headers: h }); }
     catch (e) { return { ok: false, msg: "깃헙에 닿지 못했습니다. 연결을 확인해 주세요." }; }
     if (u.status === 401) return { ok: false, msg: "깃헙이 이 토큰을 거절했습니다. 값을 다시 확인해 주세요." };
+    // fine-grained 토큰은 계정 정보를 읽을 권한이 없을 수 있다. 그건 잘못된 토큰이 아니다.
+    if (u.status === 403) return { ok: true, msg: "여기서는 확인까지 못 했습니다 (실행할 때 판가름 납니다)" };
     if (!u.ok) return { ok: false, msg: "토큰을 확인하지 못했습니다 (HTTP " + u.status + ")." };
     var who = "";
     try { who = (await u.json()).login || ""; } catch (e) {}
@@ -750,29 +752,38 @@
     cfgSay("토큰을 지웠습니다.");
   };
 
+  var pendingRan = false;
   function keep() {
     $("cfg").hidden = true;
     drawToken();
+    pendingRan = !!pending;
     if (pending) { var q = pending; pending = null; start(q.pid, q.model, q.date); }
   }
-  $("cfgSave").onclick = async function () {
+  $("cfgSave").onclick = function () {
     var v = ($("tok").value || "").trim();
-    if (!v) {
-      // 이미 들어 있으면 그대로 쓴다. 비운다고 지우지 않는다 — 지우기는 따로 있다.
-      if (tok()) { keep(); return; }
+    // 이미 들어 있으면 그대로 쓴다. 비운다고 지우지 않는다 — 지우기는 따로 있다.
+    if (!v && !tok()) {
       cfgSay("붙여넣은 값이 없습니다 — 토큰이 없으면 <b>1 토큰 만들기</b> 를 먼저 누르세요.", "bad");
       return;
     }
-    $("cfgSave").disabled = true;
-    cfgSay("확인하는 중…");
-    var r = await verify(v);
-    $("cfgSave").disabled = false;
-    if (!r.ok) { cfgSay(r.msg, "bad"); return; }
-    try { localStorage.setItem(TOKEN_KEY, v); }
-    catch (e) { cfgSay("이 브라우저에 저장할 수 없습니다.", "bad"); return; }
+    if (v) {
+      try { localStorage.setItem(TOKEN_KEY, v); }
+      catch (e) { cfgSay("이 브라우저에 저장할 수 없습니다.", "bad"); return; }
+    }
     $("tok").value = "";
     stage();
+
+    // 확인은 알려 주는 일이지 막는 일이 아니다. 확인에 실패했다고 저장을 막으면
+    // 멀쩡한 토큰을 못 넣는 사람이 생긴다 — 실제로 그렇게 막혔다.
+    // 하던 요청이 있으면 바로 이어 간다. 그 실행이 진짜 판정이다.
     keep();
+    if (!pendingRan) {
+      say("토큰을 저장했습니다. 확인하는 중…");
+      verify(tok()).then(function (r) {
+        say(r.ok ? "연결됐습니다 — " + r.msg + "<br>환자 ID 를 넣고 Enter 를 치세요."
+                 : r.msg, !r.ok);
+      });
+    }
   };
 
   /* ── 청구 데이터 훑어보기 ─────────────────────────────────────── */
