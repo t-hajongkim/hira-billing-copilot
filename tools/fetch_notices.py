@@ -30,7 +30,7 @@ from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 ORIGIN = "https://www.hira.or.kr"
-LIST_URL = f"{ORIGIN}/bbsDummy.do?pgmid=HIRAA020002000100"
+LIST_URL = f"{ORIGIN}/bbsDummy.do?pgmid=HIRAA020002000100&pageUnit=30"
 DOWNLOAD_URL = f"{ORIGIN}/bbs/bbsCDownLoad.do"
 
 HEADERS = {
@@ -60,6 +60,14 @@ KEYWORDS = [
 
 # 본문에서 이 말 주변만 잘라 에이전트에게 넘긴다.
 # 공고일과 시행일이 다르므로 시행일을 못 찾으면 어느 진료분부터인지 판단할 수 없다.
+# 목록의 작성일은 공고일이 아니다.
+# 실증: 작성일 2025-04-01 / 공고일 2025-03-31 / 시행일 2025-04-01 (brdBltNo=11438).
+# 진료일로 적용 규정을 고르는 도메인이라 이 셋을 섞으면 안 된다.
+NOTICE_NO_RE = re.compile(
+    r"고시\s*제(\d{4})-(\d+)호[,\s]*(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.")
+EFFECTIVE_RE = re.compile(
+    r"\(?시행일\)?[^0-9]{0,10}(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*(진료분부터|청구분부터)?")
+
 BODY_KEYWORDS = [
     "시행일", "적용일", "진료분부터", "청구분부터",
     "신설", "삭제", "변경", "개정",
@@ -144,7 +152,7 @@ def parse_list(html: str) -> list[dict]:
             continue
         seen.add(key)
         items.append({
-            "published": published,
+            "posted": published,
             "title": title,
             "url": urllib.parse.urljoin(LIST_URL, a.group(1).replace("&amp;", "&")),
         })
@@ -222,6 +230,24 @@ def fetch_detail(item: dict, files_dir: Path, budget: dict) -> dict:
         r"<script.*?</script>|<style.*?</style>", "", html, flags=re.S)))
 
     out: dict = {"status": "ok", "context": body_context(text)}
+
+    m = NOTICE_NO_RE.search(text)
+    if m:
+        y, no, py, pm, pd = m.groups()
+        out["고시번호"] = f"제{y}-{no}호"
+        try:
+            out["공고일"] = date(int(py), int(pm), int(pd)).isoformat()
+        except ValueError:
+            pass
+    m = EFFECTIVE_RE.search(text)
+    if m:
+        ey, em, ed, scope = m.groups()
+        try:
+            out["시행일"] = date(int(ey), int(em), int(ed)).isoformat()
+        except ValueError:
+            pass
+        if scope:
+            out["적용범위"] = scope
     atts = parse_attachments(html)
     saved = []
     for a in atts:
@@ -261,7 +287,7 @@ def main() -> int:
             if not page_items:
                 break
             pages, items = pg, items + page_items
-            if since and min(i["published"] for i in page_items) < since:
+            if since and min(i["posted"] for i in page_items) < since:
                 break
             time.sleep(0.8)
     except Exception as exc:  # noqa: BLE001
@@ -270,7 +296,7 @@ def main() -> int:
     seen: set = set()
     uniq = []
     for i in items:
-        k = (i["published"], i["title"])
+        k = (i["posted"], i["title"])
         if k not in seen:
             seen.add(k)
             uniq.append(i)
@@ -282,9 +308,9 @@ def main() -> int:
         status = "parse_failed"
 
     # ── 2) 말머리 + 키워드로 후보를 고른다 ───────────────────────────────
-    fresh = [i for i in items if not since or i["published"] >= since]
+    fresh = [i for i in items if not since or i["posted"] >= since]
     for n, i in enumerate(fresh):
-        i["slug"] = f"{i['published']}-{n:02d}"
+        i["slug"] = f"{i['posted']}-{n:02d}"
         i["candidate"], i["matched"] = is_candidate(i["title"])
     candidates = [i for i in fresh if i["candidate"]]
 
@@ -328,9 +354,14 @@ def main() -> int:
         for i in candidates:
             d = i.get("detail", {})
             L += [f"### {i['title']}", "",
-                  f"- 공고일: {i['published']}",
+                  f"- 작성일: {i['posted']}",
                   f"- 일치: {', '.join(i['matched'])}",
                   f"- 링크: {i['url']}"]
+            for k in ("고시번호", "공고일", "시행일", "적용범위"):
+                if d.get(k):
+                    L.append(f"- {k}: {d[k]}")
+            if not d.get("시행일") and d.get("status") == "ok":
+                L.append("- ⚠️ 본문에서 시행일을 찾지 못했습니다 — 첨부를 확인하세요.")
             if d.get("status") and d["status"] != "ok":
                 L.append(f"- ⚠️ 상세 조회 실패: {d['status']}")
             got = [a for a in d.get("attachments", []) if a.get("file")]
@@ -351,8 +382,8 @@ def main() -> int:
     if others:
         L += ["## 후보 아님 — 제목만", "",
               "말머리와 키워드를 함께 만족하지 않아 상세를 열지 않았습니다.", "",
-              "| 공고일 | 제목 |", "|---|---|"]
-        L += [f"| {i['published']} | {i['title'].replace('|', '｜')} |" for i in others]
+              "| 작성일 | 제목 |", "|---|---|"]
+        L += [f"| {i['posted']} | {i['title'].replace('|', '｜')} |" for i in others]
         L.append("")
 
     (out / "hira-notice.md").write_text("\n".join(L), encoding="utf-8")
@@ -361,7 +392,7 @@ def main() -> int:
           f"기간내 {len(fresh)} · 후보 {len(candidates)} · 첨부 {budget['total']:,}B")
     for i in candidates:
         n = len([a for a in i.get("detail", {}).get("attachments", []) if a.get("file")])
-        print(f"  * {i['published']} {i['title'][:56]} (첨부 {n})")
+        print(f"  * {i['posted']} {i['title'][:56]} (첨부 {n})")
 
     if status != "ok":
         print(f"::error::수집 실패 — {status}", file=sys.stderr)
