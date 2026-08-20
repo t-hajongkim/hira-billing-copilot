@@ -25,11 +25,11 @@ flowchart TD
 |---|---|---|---|---|
 | **0-1** | 심평원 규정 업데이트 | `hira-rule-sync.md` · `tools/fetch_notices.py` | 매일 06:00 KST · 수동 | `rules/HIRA_RULES.md` PR |
 | **0-2** | 환자 / 진료 Database | `db/init.sql` · `db/Dockerfile` | `publish-db-image` 수동 1회 | GHCR 이미지 |
-| **1** | 원무부 요청 | `site/index.html` → `billing-intake.yml` | 대시보드 **진료비 확인** | `workflow_dispatch` 실행 |
+| **1** | 원무부 요청 | `site/index.html` → `billing-intake.yml` | 검색창에 환자 ID · Enter | `workflow_dispatch` 실행 |
 | **2** | SQL 조회 | `billing-intake.yml` · `shared/billing-db.md` | 1 에 이어서 | `patient_token` · 비식별 진료행 |
 | **3** | AI 청구 판단 | `billing-review.md` | 2 가 호출 | 판단 마크다운 (게시 안 함) |
-| **4** | 결과 반환 | `tools/render_report.py` (post-steps) | 3 직후 | 실행 Artifact `billing-report` |
-| **—** | 현황 대시보드 | `build-dashboard.yml` · `tools/build_dashboard.py` | 이미지 게시 후 · 수동 | `site/index.html` · Pages |
+| **4** | 결과 반환 | `tools/render_report.py` (post-steps) | 3 직후 | 실행 Artifact `billing-report` → 화면에 표시 |
+| **—** | 요청 화면 | `build-dashboard.yml` · `tools/build_dashboard.py` | 이미지 게시 후 · 수동 | `site/index.html` · Pages |
 
 ### 단계별로 무슨 일이 일어나나
 
@@ -43,8 +43,10 @@ AI 가 합니다. 접속 자체가 실패하면 조용히 넘어가지 않고 �
 들어 있습니다. 이미지를 빌드할 때 경계 게이트가 돌아, 식별 열이 뷰에 새어 든 이미지는
 아예 만들어지지 않습니다.
 
-**1 — 원무부 요청.** 대시보드에서 환자 ID 를 넣고 **진료비 확인** 을 누릅니다.
-`billing-intake` 가 `workflow_dispatch` 로 뜹니다. 저장소에는 아무것도 남지 않습니다.
+**1 — 원무부 요청.** 화면 가운데 검색창에 환자 ID 를 넣고 Enter 를 칩니다.
+페이지가 `billing-intake` 를 `workflow_dispatch` 로 부르고, 그 자리에서 진행을 보여 줍니다.
+Actions 화면으로 넘기지 않습니다 — 넘기면 같은 값을 두 번 입력하게 됩니다.
+저장소에는 아무것도 남지 않습니다.
 
 **2 — SQL 조회.** 환자 ID 는 `billing-intake` 안에서 앱 자격증명으로
 `patient_token` 이 되고 **거기서 끝납니다.** 이어서 AI 는 `query-billing-db` 로
@@ -57,6 +59,8 @@ AI 가 합니다. 접속 자체가 실패하면 조용히 넘어가지 않고 �
 **4 — 결과 반환.** 판단 결과는 이슈·PR·커밋 어디에도 게시되지 않습니다.
 같은 실행 안에서 `render_report.py` 가 HTML 로 굽고, 실행 Artifacts 의
 `billing-report` 로만 내려받습니다. 7일 뒤 사라집니다.
+요청을 보낸 화면은 실행이 끝나기를 기다렸다가 그 파일을 받는 버튼을 띄웁니다 —
+사람이 실행 페이지를 찾아 들어갈 일이 없습니다.
 
 규정 동기화(0-1)는 PR 을 만들 뿐 스스로 머지하지 않습니다.
 **머지가 곧 담당자의 확인입니다.**
@@ -66,10 +70,18 @@ AI 가 합니다. 접속 자체가 실패하면 조용히 넘어가지 않고 �
 판단 결과에는 그 환자의 진료 내용이 들어 있습니다. 이슈 댓글이나 커밋으로 남기면
 저장소를 볼 수 있는 사람 모두에게 계속 남습니다. 그래서 남기지 않습니다.
 
-`billing-review` 의 `safe-outputs` 는 `staged: true` 입니다 — AI 에게 출력 창구는
-주되 이슈·PR·커밋 어디에도 게시하지 않습니다. 그 출력은 실행 안에서
-`tools/render_report.py` 가 HTML 로 바꾸고, **실행 Artifacts 의 `billing-report`** 로만
-내려받습니다. 아티팩트는 7일 뒤 사라집니다.
+`safe-outputs` 는 gh aw 가 AI 의 쓰기를 다루는 방식입니다. 에이전트에게 저장소
+쓰기 권한을 주지 않고, "이슈를 이렇게 만들어 달라" 는 **요청을 파일로 적게** 한 뒤,
+권한을 가진 별도 잡이 그 파일을 검사하고 대신 수행합니다. 프롬프트가 오염돼도
+에이전트가 직접 손댈 수 있는 것이 없습니다.
+
+`billing-review` 는 그 마지막 수행까지 끕니다 — `staged: true` 는 "만들되 게시하지
+않는다" 는 뜻입니다. AI 에게 출력 창구는 주되 이슈·PR·커밋 어디에도 남기지 않고,
+적힌 내용만 가져다 씁니다. 창구로 `create-issue` 를 쓰는 이유는 붙일 대상이 필요
+없어서입니다 — `add-comment` 는 이슈 번호를 요구하는데 여기엔 이슈가 없습니다.
+
+그 출력은 실행 안에서 `tools/render_report.py` 가 HTML 로 바꾸고,
+**실행 Artifacts 의 `billing-report`** 로만 내려받습니다. 7일 뒤 사라집니다.
 
 요청도 저장소에 남기지 않습니다. 이슈로 받던 길이 있었는데 걷어냈습니다 —
 요청이 이슈로 들어오면 환자 번호가 저장소에 남고, 그걸 지우는 단계를 또 붙여야
@@ -167,33 +179,45 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 `ghcr.io/<본인 아이디>/hira-billing-db` 로 참조하므로, 남의 패키지에 접근 권한을
 받을 일도 collaborator 를 추가할 일도 없습니다. 본인 것만 보면 됩니다.
 
-3번은 대시보드를 웹으로 여는 것뿐입니다. 안 켜도 `site/index.html` 을 내려받아
-더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만
+3번은 요청 화면을 웹으로 여는 것입니다. 화면이 곧 입구이므로 켜는 쪽을 권합니다.
+안 켜도 `site/index.html` 을 내려받아 더블클릭하면 똑같이 동작합니다 — 켜지 않으면 `build-dashboard` 의 배포 잡만
 건너뜁니다(대시보드는 그대로 커밋됩니다).
 
 Pages 사이트는 **인터넷에 공개됩니다.** 올라가는 값은 `llm.claim` 뷰에서 온
 비식별 합성 데이터뿐이고 환자 이름·ID·생년월일은 뷰에 열 자체가 없지만,
 **실제 병원 데이터를 넣는다면 Pages 를 끄십시오.**
 
-### 대시보드에서 진료비 확인 요청하기
+### 화면에서 진료비 확인 요청하기
 
-환자 ID 를 넣고 **진료비 확인** 을 누르면 `billing-intake` 가 돕니다.
+화면은 검색창 하나입니다. 환자 ID 를 넣고 Enter 를 치면 그 자리에서 진행이 보입니다.
 
-GitHub 은 익명 요청으로 워크플로를 시작해 주지 않습니다. 그래서 두 가지 길이 있습니다.
+```text
+요청 보냄  →  환자 확인 · 토큰 변환  →  규정 대조 · AI 판단  →  보고서
+```
 
-- **토큰** 을 눌러 본인 GitHub 토큰(이 저장소에 `Actions: read and write`)을 한 번
-  넣어 두면, 그 뒤로는 페이지에서 바로 실행됩니다. 토큰은 **그 브라우저에만**
-  저장되고 페이지에도 저장소에도 들어가지 않습니다 — 각자 자기 토큰으로
-  자기 저장소를 돌립니다. 본인 GHCR 을 쓰는 것과 같은 이유입니다.
-- 토큰을 넣지 않으면 Actions 실행 화면으로 넘어갑니다. GitHub 은 실행 폼의 값을
-  URL 로 미리 채워 주지 않아서, 페이지가 환자 ID 를 클립보드에 복사해 둡니다.
-  붙여넣고 **Run workflow** 를 누르면 됩니다.
+단계마다 실행 링크가 붙고, 끝나면 **보고서 내려받기** 버튼이 뜹니다.
+모델과 진료일도 검색창 아래에서 고릅니다 — Actions 실행 폼을 다시 채울 일이 없습니다.
 
-어느 쪽이든 결과는 실행 페이지 아래 **Artifacts → `billing-report`** 입니다.
+**토큰은 한 번 넣습니다.** GitHub 은 익명 요청으로 워크플로를 시작해 주지 않습니다.
+왼쪽 아래 **연결 설정** 에서 본인 토큰(이 저장소에 `Actions: Read and write`)을
+넣어 두면 그 뒤로는 검색창만 씁니다. 토큰은 **그 브라우저에만** 저장되고 페이지에도
+저장소에도 들어가지 않습니다 — 각자 자기 토큰으로 자기 저장소를 돌립니다.
+본인 GHCR 을 쓰는 것과 같은 이유입니다.
+
+받는 파일은 zip 이고 안에 HTML 하나가 들어 있습니다. 화면이 그 자리에서 풀어 보여
+주려 시도하지만 대개는 못 합니다 — GitHub 이 아티팩트 주소를 다른 호스트로 넘기고,
+브라우저는 인증 헤더가 붙은 요청의 리다이렉트를 막습니다. 그때는 내려받는 버튼을 줍니다.
+
+최근에 조회한 환자 ID 는 왼쪽 **최근** 에 남습니다. 그 브라우저에만 남고, 누르면 바로
+다시 조회합니다. **연결 설정 → 최근 기록 지우기** 로 지웁니다.
+
+**청구 데이터 훑어보기** 는 참고용입니다. AI 가 보는 것과 같은 비식별 데이터를 규정과
+대조해 둔 화면이고, 진료일과 시행일 비교·금액 검산은 AI 가 아니라 여기서 계산합니다.
+AI 의 판단을 검증할 때 봅니다.
 
 ### 판단에 쓸 모델 고르기
 
-대시보드의 드롭다운(또는 Actions 실행 폼의 **model**)에서 고릅니다.
+검색창 아래 드롭다운(또는 Actions 실행 폼의 **model**)에서 고릅니다.
 `billing-intake` 가 그 값을 `billing-review` 로 넘기고, `billing-review` 의
 최상위 `model:` 이 그대로 받습니다.
 
@@ -248,7 +272,7 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │   └── data/                         # 환자 50명 · 진료 50건 (합성, 실제 수가코드)
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
 ├── site/
-│   ├── dashboard.template.html       # 검색 + 3컬럼: 진료일 / 청구 건 / 청구 판단
+│   ├── dashboard.template.html       # 검색창 + 진행 표시 + 청구 데이터 훑어보기
 │   └── index.html                    # 빌드 산출물 (러너가 굽는다)
 ├── tools/
 │   ├── fetch_notices.py              # 심평원 공지 수집 (방화벽 밖 steps 에서 실행)
