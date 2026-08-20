@@ -162,6 +162,26 @@ REVOKE ALL ON ALL TABLES IN SCHEMA llm    FROM PUBLIC;
 REVOKE ALL ON SCHEMA public               FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 
+-- ── AI 가 쓸 롤 ──────────────────────────────────────────────────────────
+-- 비밀번호를 시크릿으로 두지 않는다.
+-- llm_reader 는 llm.claim 뷰 하나만 읽는다 — 비밀번호를 알아도 더 가져갈 게 없다.
+-- 경계는 비밀번호가 아니라 뷰와 권한이고, DB 는 워크플로 실행 중에만 뜨는
+-- localhost 전용 서비스 컨테이너다.
+-- 실제 병원 데이터를 넣는다면 이 값을 시크릿으로 바꾸고 포트를 열지 않는다.
+
+CREATE ROLE llm_reader LOGIN PASSWORD 'llm-readonly';
+
+REVOKE ALL ON SCHEMA public, private             FROM llm_reader;
+REVOKE ALL ON ALL TABLES IN SCHEMA public, private FROM llm_reader;
+
+-- 딱 두 줄이다. 함수 권한도, 다른 스키마도 주지 않는다.
+GRANT USAGE  ON SCHEMA llm TO llm_reader;
+GRANT SELECT ON llm.claim  TO llm_reader;
+
+ALTER ROLE llm_reader SET search_path = llm, pg_catalog;
+ALTER ROLE llm_reader SET default_transaction_read_only = on;
+ALTER ROLE llm_reader SET statement_timeout = '10s';
+
 -- 빌드 게이트. 하나라도 어긋나면 이미지가 만들어지지 않는다.
 -- 런타임 테스트만 두면 이미 나간 이미지를 확인할 뿐이다.
 DO $$

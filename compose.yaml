@@ -6,6 +6,5 @@ services:
       POSTGRES_DB: billing
       POSTGRES_USER: billing
       POSTGRES_PASSWORD: billing
-      LLM_DB_PASSWORD: ${LLM_DB_PASSWORD:-llm-readonly-local}
     ports:
       - "5432:5432"

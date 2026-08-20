@@ -98,8 +98,12 @@ ERROR:  cannot execute CREATE TABLE in a read-only transaction
 이 저장소를 템플릿으로 새 저장소를 만든 뒤:
 
 1. Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests** 활성화
-2. Secret `LLM_DB_PASSWORD` 등록
-3. GHCR 패키지 설정에서 새 저장소에 Actions 접근 권한 부여
+2. GHCR 패키지 설정에서 새 저장소에 Actions 접근 권한 부여
+
+시크릿은 없습니다. `llm_reader` 비밀번호는 이미지에 고정돼 있는데, 그 역할은
+`llm.claim` 뷰 하나만 읽을 수 있어 비밀번호를 알아도 더 가져갈 게 없습니다.
+경계는 비밀번호가 아니라 뷰와 권한입니다.
+**실제 병원 데이터를 넣는다면** 이 값을 시크릿으로 바꾸고 포트를 열지 마세요.
 
 ### 로컬에서 DB 실행
 
@@ -108,6 +112,8 @@ gh auth token | docker login ghcr.io -u YOUR_GITHUB_ID --password-stdin
 docker compose up -d
 ./db/test-access.sh          # 경계가 서 있는지 확인
 ```
+
+이미지를 직접 검사하려면 `./db/test-access.sh <image>` 로도 됩니다.
 
 ### 규정 동기화 수동 실행
 
@@ -127,12 +133,9 @@ gh workflow run hira-rule-sync.lock.yml -f since=2026-08-01
 │       └── publish-db-image.yml      # DB 이미지 → GHCR
 ├── db/
 │   ├── Dockerfile
-│   ├── init.sql                      # 환자·진료 2테이블 + 토큰화 + llm.claim 뷰
-│   ├── create-llm-role.sh            # llm_reader (뷰만, 읽기전용, 10s 타임아웃)
-│   ├── assert-boundary.sql           # 빌드 게이트
-│   ├── verify-image.sh               # 반출 전 검사
-│   ├── test-access.sh                # 로컬 확인
-│   └── data/                         # 환자 50명 · 진료 50건 (합성)
+│   ├── init.sql                      # 2테이블 + 토큰화 + llm.claim 뷰 + llm_reader + 빌드 게이트
+│   ├── test-access.sh                # 경계 검사 (compose 또는 이미지 대상)
+│   └── data/                         # 환자 50명 · 진료 50건 (합성, 실제 수가코드)
 ├── rules/HIRA_RULES.md               # 규정 Knowledge Base (시행일 추적)
 └── compose.yaml
 ```

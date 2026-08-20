@@ -6,12 +6,11 @@
 set -eu
 
 IMAGE="${1:-}"
-PW="${LLM_DB_PASSWORD:-llm-readonly-local}"
+PW="llm-readonly"
 
 if [ -n "$IMAGE" ]; then
-    PW="verify-$$"
     CID=$(docker run -d -e POSTGRES_DB=billing -e POSTGRES_USER=billing \
-            -e POSTGRES_PASSWORD=billing -e LLM_DB_PASSWORD="$PW" "$IMAGE")
+            -e POSTGRES_PASSWORD=billing "$IMAGE")
     trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
     i=0; while [ $i -lt 60 ]; do
         docker exec "$CID" pg_isready -h 127.0.0.1 -U billing -d billing >/dev/null 2>&1 && break

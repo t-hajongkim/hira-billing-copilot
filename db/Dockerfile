@@ -9,7 +9,6 @@ LABEL org.opencontainers.image.source="https://github.com/t-hajongkim/hira-billi
 COPY ["data/patient_master.csv",  "/data/patient_master.csv"]
 COPY ["data/treatment_claim.csv", "/data/treatment_claim.csv"]
 COPY ["init.sql",             "/docker-entrypoint-initdb.d/01-init.sql"]
-COPY ["create-llm-role.sh",   "/docker-entrypoint-initdb.d/02-create-llm-role.sh"]
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=30 \
   CMD pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" || exit 1

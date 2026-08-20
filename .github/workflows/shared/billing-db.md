@@ -49,7 +49,7 @@ mcp-scripts:
         -h 127.0.0.1 -U llm_reader -d billing \
         --command "$INPUT_SQL"
     env:
-      PGPASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
+      PGPASSWORD: llm-readonly
 ---
 
 ## 환자 / 진료 데이터베이스
