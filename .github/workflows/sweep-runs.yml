@@ -1,0 +1,72 @@
+# 요청 기록을 만료시킨다.
+#
+# 환자 ID 는 저장소에도 로그에도 남지 않지만, 한 곳에는 남는다 —
+# 깃헙이 "Run workflow 에 무엇을 넣었나" 를 그 실행에 붙여 두기 때문이다.
+# 정적 페이지든 동적 페이지든 gh CLI 든, workflow_dispatch 를 부르는 한 같다.
+# 보내는 값을 바꾸지 않는 이상 피할 수 없고, 그래서 대신 수명을 준다.
+#
+#   billing-intake  — 환자 ID 가 입력값에 있다. 30분.
+#   billing-review  — 비식별 진료행과 보고서가 있다. 7일(아티팩트 보존기간과 같게).
+#
+# 30분인 이유는 화면이 진행을 지켜보는 동안(보통 30초, 길면 몇 분) 실행이 사라지면
+# 안 되기 때문이다. 그보다 짧게 잡으면 보고 있던 화면이 실행을 잃는다.
+name: sweep-runs
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: 지난 실행을 지운다
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          sweep() {
+            file="$1"; cutoff="$2"; label="$3"
+            # 끝난 실행만 건드린다. 돌고 있는 실행을 지우면 부르던 쪽이 결과를 잃는다.
+            ids=$(gh api --paginate \
+                    "repos/$GITHUB_REPOSITORY/actions/workflows/$file/runs?per_page=100" \
+                    --jq ".workflow_runs[]
+                          | select(.status == \"completed\")
+                          | select(.created_at < \"$cutoff\")
+                          | .id" 2>/dev/null || true)
+            n=0
+            for id in $ids; do
+              if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id" >/dev/null 2>&1; then
+                n=$((n + 1))
+              fi
+            done
+            # 지운 개수만 적는다. 어떤 실행이었는지는 적지 않는다 —
+            # 지우려던 값을 요약에 옮겨 적으면 지운 보람이 없다.
+            printf '| %s | %s | %d건 |\n' "$label" "$cutoff" "$n" >> "$RUNNER_TEMP/swept.md"
+            echo "$label: $n건 지움 (기준 $cutoff)"
+          }
+
+          INTAKE_CUT=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          REVIEW_CUT=$(date -u -d '7 days ago'     +%Y-%m-%dT%H:%M:%SZ)
+
+          : > "$RUNNER_TEMP/swept.md"
+          sweep "billing-intake.yml"       "$INTAKE_CUT" "요청 (환자 ID)"
+          sweep "billing-review.lock.yml"  "$REVIEW_CUT" "판단 (비식별 진료행·보고서)"
+
+          {
+            echo "## 요청 기록을 만료시켰습니다"
+            echo
+            echo "| 대상 | 기준 시각 이전 | 지운 실행 |"
+            echo "|---|---|---|"
+            cat "$RUNNER_TEMP/swept.md"
+            echo
+            echo "환자 ID 는 저장소에도 로그에도 남지 않습니다."
+            echo "실행 입력값에만 남고, 그것도 30분이면 사라집니다."
+          } >> "$GITHUB_STEP_SUMMARY"
