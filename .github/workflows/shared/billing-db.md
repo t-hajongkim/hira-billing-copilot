@@ -6,9 +6,10 @@ permissions:
 network:
   allowed:
     - defaults
-    - www.hira.or.kr
-    - www.mohw.go.kr
-    - opendata.hira.or.kr
+    # apex 로 적는다 — 등록 도메인은 서브도메인을 자동 포함한다.
+    - hira.or.kr
+    - mohw.go.kr
+    - data.go.kr
 tools:
   cli-proxy: true
 services:
