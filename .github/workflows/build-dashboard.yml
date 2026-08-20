@@ -120,8 +120,22 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/index.html
-          git diff --cached --quiet || git commit -m "청구 대시보드 재생성"
-          git push
+          if git diff --cached --quiet; then
+            echo "대시보드가 그대로입니다 - 커밋할 것이 없습니다."
+            exit 0
+          fi
+          git commit -m "청구 대시보드 재생성"
+
+          # 이미지 게시와 push 가 겹치면 이 실행이 둘 이상 뜨고, 뒤에 온 쪽이 밀린다.
+          # 실제로 그렇게 실패했다. 밀리면 다시 얹어 본다 - 우리 커밋은 이 파일 하나다.
+          for try in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "밀렸습니다 - 다시 얹습니다 ($try/3)"
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "::error::대시보드 커밋을 올리지 못했습니다."
+          exit 1
 
       - name: Pages 묶음 만들기
         uses: actions/upload-pages-artifact@v4
