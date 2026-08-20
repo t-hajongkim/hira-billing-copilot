@@ -550,11 +550,40 @@
     return "";
   }
 
-  async function fetchReport(runId) {
-    var r = await call("/repos/" + REPO + "/actions/runs/" + runId + "/artifacts");
-    if (!r.ok) return null;
-    var j = await r.json();
-    var a = (j.artifacts || []).filter(function (x) { return x.name === "billing-report"; })[0];
+  /* 보고서는 판단 잡이 끝나면서 올라간다. 그 뒤에 도는 출력 검사(detection)는
+     결과와 상관이 없다 — 그게 매달려 30분 넘게 in_progress 였던 적이 있다.
+     그래서 실행이 다 끝나기를 기다리지 않고 파일이 생기는 쪽을 본다. */
+  async function waitReport(runId, maxMs) {
+    var t0 = Date.now();
+    while (Date.now() - t0 < maxMs) {
+      var a = await call("/repos/" + REPO + "/actions/runs/" + runId + "/artifacts");
+      if (a.status === 403 || a.status === 429) {
+        throw new Error("깃헙 API 호출 한도에 걸렸습니다. 잠시 뒤 다시 시도해 주세요.");
+      }
+      if (a.ok) {
+        var j = await a.json();
+        var hit = (j.artifacts || []).filter(function (x) { return x.name === "billing-report"; })[0];
+        if (hit) return hit;
+      }
+      // 파일이 안 생겼는데 실행이 실패로 끝났으면 더 기다릴 이유가 없다.
+      var s = await call("/repos/" + REPO + "/actions/runs/" + runId);
+      if (s.ok) {
+        var run = await s.json();
+        if (run.status === "completed" && run.conclusion !== "success") return null;
+      }
+      await sleep(4000);
+    }
+    return null;
+  }
+
+  async function fetchReport(runId, art) {
+    var a = art;
+    if (!a) {
+      var r = await call("/repos/" + REPO + "/actions/runs/" + runId + "/artifacts");
+      if (!r.ok) return null;
+      var j = await r.json();
+      a = (j.artifacts || []).filter(function (x) { return x.name === "billing-report"; })[0];
+    }
     if (!a) return null;
     var out = { link: runURL(runId) + "/artifacts/" + a.id, html: "" };
     try {
@@ -639,18 +668,18 @@
     r.reviewId = review.id;
     step(r, "review", "run", '<a href="' + runURL(review.id) + '" target="_blank" rel="noopener">' +
                              "실행 #" + review.run_number + "</a> 진행 중… (보통 2~4분)");
-    var rev = await waitRun(review.id, 20 * 60000);
-    if (!rev || rev.conclusion !== "success") {
+    var art = await waitReport(review.id, 20 * 60000);
+    if (!art) {
       step(r, "review", "bad",
            '<a href="' + runURL(review.id) + '" target="_blank" rel="noopener">실행 보기</a>');
-      r.err = "판단 워크플로가 끝나지 못했습니다.";
+      r.err = "판단 결과가 나오지 않았습니다.";
       drawRun(r);
       return;
     }
     step(r, "review", "ok", "판단을 마쳤습니다.");
     step(r, "report", "run", "결과를 가져오는 중…");
 
-    var rep = await fetchReport(review.id);
+    var rep = await fetchReport(review.id, art);
     if (!rep) { step(r, "report", "bad", "결과 파일을 찾지 못했습니다."); return; }
     if (rep.html) {
       r.html = rep.html;
