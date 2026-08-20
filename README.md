@@ -13,11 +13,12 @@ AI는 데이터베이스에 접속하지 않습니다 — 조회는 워크플로
 ```mermaid
 flowchart TD
     subgraph SETUP["기본 설정 · 사용자 개입 없음"]
-        IMG["DB 이미지<br/>환자 50명 · 진료 50건"]
-        VIEW["확인용 View<br/>llm.claim — 식별 열이 없다"]
-        SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"]
-        IMG --> VIEW
-        SYNC --> KB["규정 Knowledge Base<br/>공고일 · 시행일 · 대상 코드"]
+        IMG["DB 이미지<br/>환자 50명 · 진료 50건"] --> VIEW["확인용 View<br/>llm.claim — 식별 열이 없다"]
+        SYNC["공고 수집<br/>심평원 · 복지부 매일 06:00 KST"] --> PR["PR: 규정 추가<br/>공고일 · 시행일 · 대상 코드"]
+    end
+
+    subgraph HITL1["Human in the loop · 규정 승인"]
+        MERGE["담당자가 읽고 머지"]
     end
 
     subgraph WORK["원무부 요청"]
@@ -25,14 +26,17 @@ flowchart TD
         JOIN --> AI["AI 청구 판단<br/>진료일과 시행일 대조"]
     end
 
-    subgraph HITL["Human in the loop"]
+    subgraph HITL2["Human in the loop · 결과 확인"]
         REPORT["결과 확인용 HTML 보고서"] --> CHECK["기록에 남지 않는 결과 확인"]
     end
 
-    VIEW --> JOIN
+    PR --> MERGE
+    MERGE --> KB["규정 Knowledge Base<br/>rules/HIRA_RULES.md"]
     KB --> AI
+    VIEW --> JOIN
     AI --> REPORT
 ```
+
 
 | 단계 | 워크플로 | 트리거 | 산출물 |
 |---|---|---|---|
@@ -47,7 +51,8 @@ Actions 탭에는 순서대로 번호가 붙어 보입니다 — `0. 규정 수�
 `1. 진료비 확인 요청` · `2. 진료비 청구 판단` · `9. 확인 화면 다시 굽기` ·
 `9. 요청 기록 지우기`.
 
-규정 수집은 PR을 만들 뿐 스스로 머지하지 않습니다. **머지가 곧 담당자의 승인입니다.**
+사람이 손대는 곳은 두 군데뿐입니다 — **규정을 머지할 때**와 **판단 결과를 읽을 때**.
+수집은 PR을 만들 뿐 스스로 머지하지 않습니다. 머지하지 않은 규정은 판단에 쓰이지 않습니다.
 
 ### 규정 수집
 
