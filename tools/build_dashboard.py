@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -160,6 +161,12 @@ def build(claims: list[dict], rules: list[dict]) -> dict:
             "rules": len(rules),
             "counts": counts,
             "built_on": date.today().isoformat(),
+            # 화면의 "진료비 확인" 이 어느 저장소의 워크플로를 부를지 알려 준다.
+            # 러너가 굽기 때문에 저장소를 하드코딩할 필요가 없다 —
+            # 템플릿에서 갈라져 나온 저장소는 자기 것을 부른다.
+            "repo": os.environ.get("GITHUB_REPOSITORY", ""),
+            "server": os.environ.get("GITHUB_SERVER_URL", "https://github.com"),
+            "ref": os.environ.get("GITHUB_REF_NAME", "main"),
         },
         "rules": rules,
         "days": [{"date": d, "claims": days[d]} for d in sorted(days, reverse=True)],
