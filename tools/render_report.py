@@ -166,9 +166,13 @@ def read_report(path: Path) -> str:
             item = json.loads(ln)
         except json.JSONDecodeError:
             continue
-        body = item.get("body")
-        if isinstance(body, str) and body.strip():
-            bodies.append(body.strip())
+        # body 가 보고서 전문이다. 에이전트가 창구를 못 찾아 noop 으로 빠지면
+        # message 에 요약 한 줄만 남는다 — 그때라도 빈 화면보다는 낫다.
+        for key in ("body", "message"):
+            v = item.get(key)
+            if isinstance(v, str) and v.strip():
+                bodies.append(v.strip())
+                break
     return "\n\n---\n\n".join(bodies)
 
 
