@@ -196,8 +196,10 @@ def parse_attachments(html: str) -> list[dict]:
 def download(att: dict, slug: str, files_dir: Path, budget: dict) -> dict:
     if budget["total"] >= MAX_TOTAL_BYTES:
         return {**att, "skipped": "총량 한도 초과"}
+    if time.monotonic() > budget["until"]:
+        return {**att, "skipped": "시간 한도"}
     try:
-        status, blob, headers = get(att["url"], retries=2, timeout=90)
+        status, blob, headers = get(att["url"], retries=1, timeout=30)
     except Exception as exc:  # noqa: BLE001
         return {**att, "error": str(exc)[:120]}
     if status != 200 or not blob:
@@ -266,6 +268,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", default="", help="이 날짜 이후 공고만 (YYYY-MM-DD)")
     ap.add_argument("--out", default=".hira-fetch")
+    # 상대는 정부 사이트다. 느린 날 첨부 하나가 몇 분을 먹는다 — 실제로 수집에만
+    # 23분이 걸린 적이 있다. 받은 만큼만 넘기고 넘어간다. 무엇을 못 받았는지는 적는다.
+    ap.add_argument("--deadline", type=int, default=300, help="수집에 쓸 최대 초")
     args = ap.parse_args()
 
     since = args.since.strip()
@@ -275,7 +280,7 @@ def main() -> int:
     out = Path(args.out)
     files_dir = out / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
-    budget = {"total": 0}
+    budget = {"total": 0, "until": time.monotonic() + args.deadline}
     fetched_at = datetime.now(KST).isoformat(timespec="seconds")
 
     # ── 1) 기간이 덮일 때까지 목록을 넘긴다 ──────────────────────────────
@@ -320,8 +325,12 @@ def main() -> int:
     candidates = [i for i in fresh if i["candidate"]]
 
     # ── 3) 후보만 상세를 열고 첨부를 받는다 ──────────────────────────────
+    deadline_hit = False
     if status == "ok":
         for i in candidates[:MAX_DETAILS]:
+            if time.monotonic() > budget["until"]:
+                deadline_hit = True
+                break
             i["detail"] = fetch_detail(i, files_dir, budget)
             time.sleep(0.6)
 
@@ -335,6 +344,8 @@ def main() -> int:
         "items_in_window": len(fresh),
         "candidates": len(candidates),
         "details_fetched": sum(1 for i in candidates if "detail" in i),
+        "deadline_seconds": args.deadline,
+        "deadline_hit": deadline_hit,
         "downloaded_bytes": budget["total"],
         "prefixes": PREFIXES,
         "keywords": KEYWORDS,
