@@ -7,11 +7,16 @@
 name: build-dashboard
 
 on:
+  # db/data 가 바뀌면 이미지부터 다시 올라가야 한다. push 로 같이 걸면
+  # 대시보드가 옛 이미지를 읽는다 — 실제로 두 워크플로가 같은 초에 시작해 그렇게 됐다.
+  # 그래서 이미지 게시가 끝난 뒤에 돈다.
+  workflow_run:
+    workflows: [publish-db-image]
+    types: [completed]
   push:
     branches: [main]
     paths:
       - "rules/**"
-      - "db/data/**"
       - "site/dashboard.template.html"
       - "tools/build_dashboard.py"
   workflow_dispatch:
@@ -22,6 +27,10 @@ permissions:
 
 jobs:
   build:
+    # workflow_run 으로 왔으면 그 실행이 성공했을 때만.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
