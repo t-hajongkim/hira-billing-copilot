@@ -168,6 +168,13 @@
   .sheet input{width:100%;height:40px;margin:14px 0 16px;border:1px solid var(--line);
     border-radius:12px;padding:0 13px;font:inherit;font-size:13px;background:var(--card);outline:none}
   .sheet input:focus{border-color:var(--accent)}
+  .sheet .say{margin:2px 0 14px;font-size:12.5px;font-weight:700;line-height:1.6;
+    color:var(--dim)}
+  .sheet .say.ok{color:#1f6b41}
+  .sheet .say.bad{color:var(--danger)}
+  .sheet .have{margin:0 0 12px;padding:12px 14px;border-radius:13px;background:var(--accent-bg);
+    font-size:12.5px;font-weight:700;line-height:1.6;color:#6d5600}
+  .sheet .have b{font-variant-numeric:tabular-nums}
   .sheet .mk{display:flex;align-items:center;justify-content:center;height:40px;
     margin:14px 0 4px;border-radius:12px;background:var(--ink);color:#fff;font-size:13px;
     font-weight:750;text-decoration:none;letter-spacing:-.2px}
@@ -282,25 +289,30 @@
 <div class="over" id="cfg" hidden>
   <div class="sheet">
     <h2>GitHub 연결</h2>
-    <p>깃헙은 익명 요청으로 워크플로를 시작해 주지 않습니다 — 공식 문서에 그렇게 적혀
-       있고, 페이지에서 바로 실행하려면 토큰이 <b>한 번</b> 필요합니다. 이 토큰은
+    <div class="have" id="cfgHave" hidden></div>
+    <p id="cfgWhy">깃헙은 익명 요청으로 워크플로를 시작해 주지 않습니다 — 공식 문서에 그렇게
+       적혀 있고, 페이지에서 바로 실행하려면 토큰이 <b>한 번</b> 필요합니다. 이 토큰은
        <b>이 브라우저에만</b> 저장되고 페이지에도 저장소에도 들어가지 않습니다.
        각자 자기 토큰으로 자기 저장소를 돌립니다.</p>
-    <p><b>두 번 누르면 끝납니다.</b> 아래를 누르면 권한(<code>repo</code>)이 미리 체크된
-       발급 화면이 열립니다 → <b>Generate token</b> → 나온 값을 아래 칸에 붙여넣으세요.</p>
+    <p><b>이미 만들어 둔 토큰이 있으면 만들지 마세요</b> — 아래 칸에 붙여넣으면 됩니다.
+       깃헙은 한 번 만든 토큰 값을 다시 보여 주지 않으니, 어디에 적어 두지 않았다면
+       찾는 것보다 새로 만드는 쪽이 빠릅니다.</p>
+    <p>새로 만든다면 아래를 누르세요. 권한(<code>repo</code>)이 미리 체크된 발급 화면이
+       열립니다 → <b>Generate token</b> → 나온 값을 붙여넣으세요.</p>
     <a class="mk" target="_blank" rel="noopener"
        href="https://github.com/settings/tokens/new?scopes=repo&amp;description=HIRA+Billing+Copilot">토큰 만들기 →</a>
     <input id="tok" type="password" autocomplete="off" spellcheck="false"
-           placeholder="ghp_… 를 붙여넣으세요">
+           placeholder="ghp_… 또는 github_pat_… 를 붙여넣으세요">
+    <div class="say" id="cfgSay"></div>
     <p style="margin-bottom:0">더 좁게 주려면
        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank"
           rel="noopener">fine-grained token</a> 에서 이 저장소만 고르고
-       <code>Actions: Read and write</code> 하나만 켜면 됩니다.
-       비워 두고 저장하면 지워집니다.</p>
+       <code>Actions: Read and write</code> 하나만 켜면 됩니다.</p>
     <div class="row2" style="margin-top:16px">
       <button id="cfgClear">최근 기록 지우기</button>
+      <button id="cfgForget" hidden>토큰 지우기</button>
       <button id="cfgCancel">닫기</button>
-      <button class="prim" id="cfgSave">저장하고 계속</button>
+      <button class="prim" id="cfgSave">확인하고 저장</button>
     </div>
   </div>
 </div>
@@ -651,22 +663,93 @@
   $("go").onclick = submit;
   $("newBtn").onclick = function () { hero(); $("pid").value = ""; $("pid").focus(); say(""); };
 
-  function openCfg() { $("tok").value = tok(); $("cfg").hidden = false; $("tok").focus(); }
+  function mask(v) { return v.length < 12 ? "••••" : v.slice(0, 4) + "••••" + v.slice(-4); }
+  function cfgSay(t, kind) {
+    var e = $("cfgSay"); e.innerHTML = t || ""; e.className = "say" + (kind ? " " + kind : "");
+  }
+
+  /* 붙여넣은 값이 쓸 수 있는 값인지 여기서 본다.
+     안 그러면 실행이 시작조차 안 되는데, 화면에는 "요청 실패" 로만 보인다.
+     고전 토큰은 응답 헤더에 권한이 실려 온다 — 모자라면 실행 전에 짚어 준다. */
+  async function verify(v) {
+    var h = { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + v };
+    var u;
+    try { u = await fetch(API + "/user", { headers: h }); }
+    catch (e) { return { ok: false, msg: "깃헙에 닿지 못했습니다. 연결을 확인해 주세요." }; }
+    if (u.status === 401) return { ok: false, msg: "깃헙이 이 토큰을 거절했습니다. 값을 다시 확인해 주세요." };
+    if (!u.ok) return { ok: false, msg: "토큰을 확인하지 못했습니다 (HTTP " + u.status + ")." };
+    var who = "";
+    try { who = (await u.json()).login || ""; } catch (e) {}
+    var scopes = (u.headers.get("x-oauth-scopes") || "").split(",")
+                   .map(function (s) { return s.trim(); }).filter(Boolean);
+    if (scopes.length && scopes.indexOf("repo") < 0 && scopes.indexOf("public_repo") < 0) {
+      return { ok: false, msg: "권한이 모자랍니다 — 지금 " + scopes.join(", ") +
+                               ". <code>repo</code> 를 켜서 다시 만들어 주세요." };
+    }
+    if (!REPO) return { ok: true, msg: who + " · 저장소를 알 수 없는 화면이라 여기까지만 확인했습니다." };
+    var r = await fetch(API + "/repos/" + REPO, { headers: h });
+    if (r.status === 404) {
+      return { ok: false, msg: who + " 계정으로는 " + REPO + " 가 보이지 않습니다. 저장소를 확인해 주세요." };
+    }
+    if (!r.ok) return { ok: false, msg: "저장소를 확인하지 못했습니다 (HTTP " + r.status + ")." };
+    return { ok: true, msg: who + " · " + (scopes.length ? "권한 " + scopes.join(", ")
+                                                         : "fine-grained 토큰") + " · " + REPO + " 확인됨" };
+  }
+
+  function openCfg() {
+    var have = tok();
+    $("tok").value = "";
+    $("tok").placeholder = have ? "바꾸려면 새 값을 붙여넣으세요"
+                                : "ghp_… 또는 github_pat_… 를 붙여넣으세요";
+    $("cfgHave").hidden = !have;
+    $("cfgForget").hidden = !have;
+    $("cfgWhy").hidden = !!have;
+    cfgSay("");
+    $("cfg").hidden = false;
+    $("tok").focus();
+    if (have) {
+      $("cfgHave").innerHTML = "이 브라우저에 토큰이 이미 들어 있습니다 — <b>" +
+        esc(mask(have)) + "</b><br>비워 두고 <b>확인하고 저장</b> 을 누르면 그대로 씁니다.";
+      cfgSay("넣어 둔 토큰을 확인하는 중…");
+      verify(have).then(function (r) { cfgSay(r.msg, r.ok ? "ok" : "bad"); });
+    }
+  }
   $("cfgBtn").onclick = function () { pending = null; openCfg(); };
   $("cfgCancel").onclick = function () { $("cfg").hidden = true; pending = null; };
   $("cfgClear").onclick = function () {
     try { localStorage.removeItem(RECENT_KEY); } catch (e) {}
     drawRecent();
+    cfgSay("최근 목록을 지웠습니다.");
   };
-  $("cfgSave").onclick = function () {
-    var v = ($("tok").value || "").trim();
-    try {
-      if (v) localStorage.setItem(TOKEN_KEY, v); else localStorage.removeItem(TOKEN_KEY);
-    } catch (e) { say("이 브라우저에 저장할 수 없습니다.", true); }
-    $("tok").value = "";
+  $("cfgForget").onclick = function () {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+    drawToken();
+    openCfg();
+    cfgSay("토큰을 지웠습니다.");
+  };
+
+  function keep() {
     $("cfg").hidden = true;
     drawToken();
-    if (pending && v) { var p = pending; pending = null; start(p.pid, p.model, p.date); }
+    if (pending) { var q = pending; pending = null; start(q.pid, q.model, q.date); }
+  }
+  $("cfgSave").onclick = async function () {
+    var v = ($("tok").value || "").trim();
+    if (!v) {
+      // 이미 들어 있으면 그대로 쓴다. 비운다고 지우지 않는다 — 지우기는 따로 있다.
+      if (tok()) { keep(); return; }
+      cfgSay("붙여넣은 값이 없습니다.", "bad");
+      return;
+    }
+    $("cfgSave").disabled = true;
+    cfgSay("확인하는 중…");
+    var r = await verify(v);
+    $("cfgSave").disabled = false;
+    if (!r.ok) { cfgSay(r.msg, "bad"); return; }
+    try { localStorage.setItem(TOKEN_KEY, v); }
+    catch (e) { cfgSay("이 브라우저에 저장할 수 없습니다.", "bad"); return; }
+    $("tok").value = "";
+    keep();
   };
 
   /* ── 청구 데이터 훑어보기 ─────────────────────────────────────── */
