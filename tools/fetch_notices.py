@@ -208,6 +208,11 @@ def download(att: dict, slug: str, files_dir: Path, budget: dict) -> dict:
     disp = headers.get("Content-Disposition", "")
     m = re.search(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", disp)
     name = urllib.parse.unquote(m.group(1)).strip() if m else (att["label"] or "attachment")
+    # urllib 은 헤더를 latin-1 로 읽는다. 심평원은 UTF-8 바이트를 그대로 보낸다.
+    try:
+        name = name.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
     name = re.sub(r'[\\/:*?"<>|]', "_", name)[:120]
     if not name.lower().endswith(WANT_EXT):
         return {**att, "skipped": f"대상 확장자 아님 ({name})"}
