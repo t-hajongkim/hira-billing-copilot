@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>청구 현황 — HIRA Billing Copilot</title>
+<!--
+  이 파일은 tools/build_dashboard.py 가 생성한다. 직접 고치지 않는다.
+
+  제약(의도적): fetch() 없음 · type="module" 없음 · 외부 요청 없음.
+  file:// 로 열어도 그대로 동작해야 한다 — 병원 노트북에서 더블클릭 한 번.
+
+  화면에 나오는 값은 전부 llm.claim 뷰에서 온 비식별 데이터다.
+  환자 이름·ID·생년월일은 뷰에 열 자체가 없다.
+-->
+<style>
+  :root{
+    --bg:#f1f2f0; --panel:#f6f7f4; --line:#e4e6e1; --line2:#eeefec;
+    --ink:#0b0b0c; --dim:rgba(60,60,67,.55); --dim2:rgba(60,60,67,.35);
+    --accent:#FFE66D; --accent-soft:#FFF3C2; --accent-bg:#FFF9E0;
+    --on-accent:#2b2410; --gold:#8a6d00; --danger:#FF4438; --danger-bg:#FFECEA;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,
+      'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',sans-serif}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:rgba(60,60,67,.18);border-radius:8px;
+    border:2px solid transparent;background-clip:content-box}
+  .app{display:flex;height:100vh;width:100%;overflow:hidden}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* 1열 — 진료일 */
+  .col-days{width:246px;flex:none;display:flex;flex-direction:column;
+    background:radial-gradient(140% 80% at 0% 0%,#f6f7f4 0%,#eaece7 100%);
+    border-right:1.5px solid var(--line)}
+  .head{height:76px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:0 18px}
+  .head h1{margin:0;font-size:16px;font-weight:800;letter-spacing:-.5px}
+  .head .sub{font-size:12.5px;font-weight:650;color:var(--dim)}
+  .scroll{flex:1;overflow-y:auto;padding:0 10px 16px}
+  .month{padding:14px 8px 8px;font-size:12px;font-weight:750;letter-spacing:.4px;color:var(--dim2)}
+  .day{display:flex;align-items:center;gap:10px;padding:11px;border-radius:15px;cursor:pointer;
+    margin-bottom:4px;background:transparent;border:0;width:100%;text-align:left;font:inherit;
+    color:inherit;transition:background .14s ease}
+  .day:hover{background:rgba(255,255,255,.75)}
+  .day.sel{background:var(--accent);box-shadow:0 10px 22px -14px rgba(255,214,60,.95)}
+  .day .n{width:28px;flex:none;text-align:right;font-size:18px;font-weight:800;letter-spacing:-.6px}
+  .day .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .day .t1{font-size:13px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .day .t2{font-size:11.5px;font-weight:600;color:var(--dim2)}
+  .day.sel .t2{color:rgba(43,36,16,.62)}
+  .day.sel .n,.day.sel .t1{color:var(--on-accent)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .dot.danger{background:var(--danger)} .dot.warn{background:#FFC53D}
+  .ledger{flex:none;margin:0 10px 14px;padding:13px 14px;border-radius:16px;
+    background:var(--accent-bg);display:flex;align-items:flex-start;gap:9px}
+  .ledger span{font-size:12px;font-weight:700;line-height:1.5;color:var(--gold)}
+
+  /* 2열 — 청구 건 */
+  .col-claims{width:392px;flex:none;display:flex;flex-direction:column;
+    background:var(--panel);border-right:1.5px solid var(--line)}
+  .phead{height:76px;flex:none;display:flex;align-items:center;gap:10px;padding:0 18px}
+  .phead b{font-size:19px;font-weight:800;letter-spacing:-.5px}
+  .phead span{font-size:12.5px;font-weight:650;color:var(--dim)}
+  .filters{flex:none;padding:0 14px 12px;display:flex;gap:7px;flex-wrap:wrap}
+  .filters button{height:32px;padding:0 13px;border-radius:11px;font-size:12.5px;font-weight:750;
+    cursor:pointer;background:#fff;border:1.5px solid var(--line2);color:var(--dim);font-family:inherit}
+  .filters button.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+  .plist{flex:1;overflow-y:auto;padding:2px 12px 18px;display:flex;flex-direction:column;gap:10px}
+  .card{padding:15px 17px;border-radius:20px;cursor:pointer;background:#fff;
+    border:1.5px solid var(--line2);text-align:left;font:inherit;color:inherit;width:100%;display:block;
+    transition:background .14s ease}
+  .card:hover{background:#fffdf4;border-color:#e6e3d4}
+  .card.sel{background:var(--accent);border-color:var(--accent);
+    box-shadow:0 14px 30px -16px rgba(255,214,60,.95)}
+  .card .row1{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .card .code{font-size:12.5px;font-weight:800;letter-spacing:.2px;color:var(--gold)}
+  .card.sel .code{color:var(--on-accent)}
+  .card .nm{font-size:14.5px;font-weight:750;line-height:1.42;letter-spacing:-.3px}
+  .card.sel .nm{color:var(--on-accent)}
+  .card .meta{margin-top:7px;font-size:12.5px;font-weight:650;color:var(--dim)}
+  .card.sel .meta{color:rgba(43,36,16,.62)}
+  .empty{padding:56px 16px;text-align:center;font-size:14px;font-weight:650;color:var(--dim2)}
+
+  .chip{height:25px;display:inline-flex;align-items:center;padding:0 10px;border-radius:9px;
+    font-size:11.5px;font-weight:800;white-space:nowrap}
+  .v-ok{background:var(--accent);color:var(--on-accent)}
+  .v-check{background:var(--accent-soft);color:var(--gold)}
+  .v-no{background:var(--danger);color:#fff}
+  .v-none{background:#f2f3f0;color:var(--dim2)}
+  .card.sel .chip{background:rgba(43,36,16,.14);color:var(--on-accent)}
+
+  /* 3열 — 판단 */
+  .col-detail{flex:1;min-width:0;display:flex;flex-direction:column;background:#fff}
+  .dhead{height:76px;flex:none;display:flex;align-items:center;padding:0 26px;
+    border-bottom:1.5px solid #eef0ef;font-size:13px;font-weight:700;color:var(--dim2)}
+  .dbody{flex:1;overflow-y:auto}
+  .dwrap{max-width:860px;padding:34px 42px 84px}
+  .badges{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+  .pill{height:30px;display:inline-flex;align-items:center;gap:7px;padding:0 13px;border-radius:20px;
+    background:var(--accent-soft);color:var(--gold);font-size:13px;font-weight:750}
+  .dwrap h2{margin:0;font-size:30px;font-weight:800;line-height:1.3;letter-spacing:-.9px;text-wrap:pretty}
+  .sub{margin-top:12px;font-size:14.5px;font-weight:600;color:var(--dim)}
+  .sec{margin-top:24px;padding:20px 22px;border-radius:20px;border:1.5px solid var(--line2)}
+  .sec.warn{background:var(--accent-bg);border-color:transparent}
+  .sec.danger{background:var(--danger-bg);border-color:transparent}
+  .sec-t{font-size:13px;font-weight:800;letter-spacing:.3px;color:var(--dim);margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td{padding:7px 0;vertical-align:top}
+  td:first-child{width:132px;font-weight:700;color:var(--dim)}
+  td:last-child{font-weight:650}
+  .flag{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:13px;
+    background:rgba(255,255,255,.75);margin-bottom:8px;font-size:14px;font-weight:600;line-height:1.55}
+  .flag .mk{flex:none;min-width:40px;height:24px;display:inline-flex;align-items:center;
+    justify-content:center;border-radius:8px;font-size:11.5px;font-weight:800}
+  .mk.danger{background:var(--danger);color:#fff}
+  .mk.warn{background:var(--accent);color:var(--on-accent)}
+  .rule{padding:15px 17px;border-radius:16px;border:1.5px solid var(--line2);margin-bottom:10px}
+  .rule.applies{border-color:var(--accent);background:#fffdf2}
+  .rule h4{margin:0 0 8px;font-size:15px;font-weight:800;letter-spacing:-.3px}
+  .rule .dates{font-size:12.5px;font-weight:700;color:var(--gold);margin-bottom:8px}
+  .rule p{margin:6px 0 0;font-size:13.5px;font-weight:600;line-height:1.6;color:#1c1c1e}
+  .note{margin-top:26px;font-size:12.5px;font-weight:650;color:var(--dim2);line-height:1.6}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script type="application/json" id="payload">__DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("payload").textContent);
+  var DAYS = D.days || [], META = D.meta || {};
+  var WD = ["일","월","화","수","목","금","토"];
+  var FILTERS = ["전체","불인정","확인 필요","적용 규정 있음","규정 없음"];
+  var state = { day: 0, claim: 0, filter: "전체" };
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+  function won(n){ var v = parseInt(n,10); return isNaN(v) ? "—" : v.toLocaleString("ko-KR") + "원"; }
+  function cls(v){ return v==="불인정" ? "v-no" : v==="확인 필요" ? "v-check"
+                 : v==="적용 규정 있음" ? "v-ok" : "v-none"; }
+
+  function visible(){
+    var d = DAYS[state.day]; if(!d) return [];
+    return state.filter==="전체" ? d.claims
+         : d.claims.filter(function(c){ return c.judgement.verdict === state.filter; });
+  }
+  function current(){ var v = visible(); return v[Math.min(state.claim, v.length-1)] || null; }
+
+  function renderDays(){
+    var h="", last="";
+    DAYS.forEach(function(d,i){
+      var dt = new Date(d.date+"T00:00:00");
+      var label = dt.getFullYear()+"년 "+(dt.getMonth()+1)+"월";
+      if(label!==last){ h += '<div class="month">'+label+"</div>"; last=label; }
+      var danger = d.claims.filter(function(c){return c.judgement.verdict==="불인정";}).length;
+      var warn = d.claims.filter(function(c){return c.judgement.verdict==="확인 필요";}).length;
+      h += '<button class="day'+(i===state.day?" sel":"")+'" data-day="'+i+'">'+
+             '<span class="n num">'+String(dt.getDate()).padStart(2,"0")+"</span>"+
+             '<span class="mid"><span class="t1">청구 '+d.claims.length+"건</span>"+
+             '<span class="t2">'+WD[dt.getDay()]+"요일"+
+               (danger?" · 불인정 "+danger:"")+(warn?" · 확인 "+warn:"")+"</span></span>"+
+             (danger?'<span class="dot danger"></span>':warn?'<span class="dot warn"></span>':"")+
+           "</button>";
+    });
+    return h;
+  }
+
+  function renderClaims(){
+    var v = visible();
+    if(!v.length) return '<div class="empty">해당 조건의 청구가 없습니다</div>';
+    var cur = current();
+    return v.map(function(c,i){
+      var sel = cur && c===cur;
+      return '<button class="card'+(sel?" sel":"")+'" data-claim="'+i+'">'+
+        '<span class="row1"><span class="code">'+esc(c.hira_fee_code)+"</span>"+
+        '<span style="flex:1"></span><span class="chip '+cls(c.judgement.verdict)+'">'+
+        esc(c.judgement.verdict)+"</span></span>"+
+        '<span class="nm" style="display:block">'+esc(c.order_name)+"</span>"+
+        '<span class="meta" style="display:block">'+esc(c.department_name)+" · "+
+        esc(c.coverage_type)+" · "+won(c.total_charge_krw)+"</span></button>";
+    }).join("");
+  }
+
+  function renderDetail(){
+    var c = current();
+    if(!c) return '<div class="dwrap"><div class="empty">청구를 선택하세요</div></div>';
+    var j = c.judgement;
+    var h = '<div class="dwrap"><div class="badges">'+
+      '<span class="pill">'+esc(c.hira_fee_code)+"</span>"+
+      '<span class="chip '+cls(j.verdict)+'" style="height:30px;border-radius:10px;padding:0 12px">'+
+      esc(j.verdict)+"</span>"+
+      '<span style="font-size:13px;font-weight:650;color:var(--dim)">'+esc(c.claim_status)+"</span></div>"+
+      "<h2>"+esc(c.order_name)+"</h2>"+
+      '<div class="sub">'+esc(c.treatment_date)+" · "+esc(c.department_name)+" · "+
+      esc(c.visit_type)+" · 상병 "+esc(c.primary_diagnosis_code)+"</div>";
+
+    h += '<div class="sec"><div class="sec-t">금액</div><table>'+
+      "<tr><td>총액</td><td class='num'>"+won(c.total_charge_krw)+"</td></tr>"+
+      "<tr><td>본인부담</td><td class='num'>"+won(c.patient_charge_krw)+
+        " ("+Math.round(parseFloat(c.copayment_rate)*100)+"%)</td></tr>"+
+      "<tr><td>공단부담</td><td class='num'>"+won(c.insurer_charge_krw)+"</td></tr>"+
+      "<tr><td>급여 구분</td><td>"+esc(c.coverage_type)+"</td></tr></table></div>";
+
+    h += '<div class="sec"><div class="sec-t">판단에 쓴 환자 조건</div><table>'+
+      "<tr><td>나이 · 성별</td><td>만 "+esc(c.age)+"세 · "+esc(c.sex)+"</td></tr>"+
+      "<tr><td>보험</td><td>"+esc(c.insurance_type)+" · "+esc(c.copayment_type)+"</td></tr>"+
+      "<tr><td>산정특례</td><td>"+esc(c.special_case_type||"없음")+"</td></tr></table></div>";
+
+    if(j.flags.length){
+      var worst = j.flags.some(function(f){return f.level==="danger";}) ? "danger" : "warn";
+      h += '<div class="sec '+worst+'"><div class="sec-t">짚어야 할 것</div>'+
+        j.flags.map(function(f){
+          return '<div class="flag"><span class="mk '+f.level+'">'+
+            (f.level==="danger"?"불인정":"확인")+"</span><span>"+esc(f.text)+"</span></div>";
+        }).join("")+"</div>";
+    }
+
+    h += '<div class="sec"><div class="sec-t">적용 규정</div>';
+    if(!j.rules.length){
+      h += '<p style="margin:0;font-size:14px;font-weight:600;color:var(--dim)">'+
+        "기록된 규정 중 이 코드에 닿는 것이 없습니다. "+
+        "규정이 없는 것과 아직 수집되지 않은 것은 다릅니다.</p>";
+    } else {
+      h += j.rules.map(function(r){
+        return '<div class="rule'+(r.applies?" applies":"")+'">'+
+          "<h4>"+esc(r.title)+"</h4>"+
+          '<div class="dates">'+esc(r.id)+" · 공고 "+esc(r.published)+" · 시행 "+esc(r.effective_raw)+
+          " · "+esc(r.kind)+"</div>"+
+          '<div style="font-size:13px;font-weight:750;color:'+(r.applies?"var(--gold)":"var(--dim2)")+'">'+
+          (r.applies ? "진료일 "+esc(c.treatment_date)+" 은 시행일 이후 → 이 규정 적용"
+                     : "진료일 "+esc(c.treatment_date)+" 은 시행일 전 → 적용되지 않음")+"</div>"+
+          (r.changed?"<p>"+esc(r.changed)+"</p>":"")+
+          (r.note?'<p style="color:var(--dim)">'+esc(r.note)+"</p>":"")+
+        "</div>";
+      }).join("");
+    }
+    h += "</div>";
+
+    h += '<div class="note">이 화면의 판정은 규칙 계산입니다 — 진료일과 시행일 비교, 금액 검산.<br>'+
+      "AI 의 청구 판단은 각 이슈 댓글에 있고, 이 화면은 그 판단을 검증할 근거를 보여 줍니다.<br>"+
+      "모든 결과는 원무 담당자의 확인이 필요합니다.</div></div>";
+    return h;
+  }
+
+  function render(){
+    var d = DAYS[state.day] || {claims:[], date:""};
+    var v = visible();
+    document.getElementById("app").innerHTML =
+      '<div class="col-days"><div class="head"><h1>청구 현황</h1>'+
+        '<div class="sub num">청구 '+META.claims+"건 · "+META.days+"일 · 규정 "+META.rules+"건</div></div>"+
+        '<div class="scroll">'+renderDays()+"</div>"+
+        '<div class="ledger"><span>'+
+          Object.keys(META.counts||{}).map(function(k){return k+" "+META.counts[k];}).join(" · ")+
+        "</span></div></div>"+
+      '<div class="col-claims"><div class="phead"><div><b>'+esc(d.date)+"</b><br>"+
+        "<span>청구 "+d.claims.length+"건 중 "+v.length+"건 표시</span></div></div>"+
+        '<div class="filters">'+FILTERS.map(function(f){
+          return '<button data-filter="'+f+'" class="'+(state.filter===f?"sel":"")+'">'+f+"</button>";
+        }).join("")+"</div>"+
+        '<div class="plist">'+renderClaims()+"</div></div>"+
+      '<div class="col-detail"><div class="dhead">'+esc(d.date)+"  ›  청구 판단</div>"+
+        '<div class="dbody">'+renderDetail()+"</div></div>";
+
+    document.querySelectorAll("[data-day]").forEach(function(el){
+      el.onclick=function(){ state.day=+el.dataset.day; state.claim=0; render(); }; });
+    document.querySelectorAll("[data-claim]").forEach(function(el){
+      el.onclick=function(){ state.claim=+el.dataset.claim; render(); }; });
+    document.querySelectorAll("[data-filter]").forEach(function(el){
+      el.onclick=function(){ state.filter=el.dataset.filter; state.claim=0; render(); }; });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
