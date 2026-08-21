@@ -65,22 +65,25 @@ jobs:
           # 실습에서 볼 일도 없다. 보고서만 남기고 지운다.
           # 끝난 실행만 건드린다 - 도는 중에 지우면 뒤 잡이 그 파일을 잃는다.
           prune_artifacts() {
+            # 저장소 전체를 훑는다. 판단 실행만 보면 규정 수집이 남긴 것들이 그대로 쌓인다 -
+            # 실제로 그랬다. gh aw 워크플로는 어느 것이든 같은 진단 아티팩트를 남긴다.
+            # 45분보다 오래된 것만 지운다. 도는 중인 실행의 파일을 뺏지 않으려는 것이다.
             n=0
-            runs=$(gh api --paginate \
-                     "repos/$GITHUB_REPOSITORY/actions/workflows/billing-review.lock.yml/runs?per_page=50" \
-                     --jq '.workflow_runs[] | select(.status == "completed") | .id' 2>/dev/null || true)
-            for run in $runs; do
-              arts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" \
-                       --jq '.artifacts[] | select(.expired == false)
-                             | select(.name != "billing-report") | .id' 2>/dev/null || true)
-              for a in $arts; do
-                if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$a" >/dev/null 2>&1; then
-                  n=$((n + 1))
-                fi
-              done
+            cut=$(date -u -d '45 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+            ids=$(gh api --paginate \
+                    "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+                    --jq ".artifacts[]
+                          | select(.expired == false)
+                          | select(.name != $KEEP)
+                          | select(.created_at < $cut)
+                          | .id" --arg KEEP billing-report --arg cut "$cut" 2>/dev/null || true)
+            for a in $ids; do
+              if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$a" >/dev/null 2>&1; then
+                n=$((n + 1))
+              fi
             done
-            printf '| %s | %s | %d개\n' "진단 아티팩트 (보고서만 남김)" "-" "$n" >> "$RUNNER_TEMP/swept.md"
-            echo "진단 아티팩트 $n개 지움"
+            printf '| %s | %s | %d개\n' "진단 아티팩트 (보고서만 남김)" "$cut" "$n" >> "$RUNNER_TEMP/swept.md"
+            echo "진단 아티팩트 $n개 지움 (기준 $cut)"
           }
 
           MINUTES=$(printf '%s' "${OLDER_THAN:-}" | grep -oE '^[0-9]+$' || true)
