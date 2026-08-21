@@ -28,7 +28,7 @@ on:
       # 여기로 옮겼다 — 요청이 이슈로 들어오지 않게 되면서 그 화면이 없어졌다.
       # auto 는 Copilot 이 알아서 고른다. 나머지는 요금제에 따라 안 될 수 있다.
       model:
-        description: "판단에 쓸 모델 (확실하지 않으면 auto - 나머지는 요금제가 거절할 수 있습니다)"
+        description: "판단에 쓸 모델 (무료 요금제면 auto · 유료 Copilot 이면 haiku 가 빠름)"
         required: false
         type: choice
         default: auto

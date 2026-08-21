@@ -87,9 +87,10 @@ Actions → **1. 진료비 확인 요청** → **Run workflow** 에 환자 ID를
 진료일과 모델도 그 자리에서 고릅니다. 결과는 **2. 진료비 청구 판단** 실행의
 **Artifacts → `billing-report`** 에서 내려받습니다.
 
-판단에 쓸 모델은 **`auto` 로 두는 것이 안전합니다.** `sonnet` · `opus` · `haiku` ·
-`gpt-5` · `gemini-pro` 를 고를 수 있지만, 요금제가 그 모델을 안 주면
-`400 The requested model is not supported` 로 실패합니다.
+판단에 쓸 모델은 **`auto` 로 시작하세요.** 쓸 수 있는 모델은 계정의 Copilot 요금제에
+따라 다릅니다 — 요금제가 그 모델을 안 주면 `400 The requested model is not supported` 로
+실패합니다. **유료 Copilot 이면 `haiku` 가 가장 빠릅니다.** 그 밖에 `sonnet` · `opus` ·
+`gpt-5` · `gemini-pro` 도 고를 수 있습니다.
 
 ### 로컬에서 확인
 
