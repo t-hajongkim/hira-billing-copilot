@@ -60,6 +60,29 @@ jobs:
             echo "$label: $n건 지움 (기준 $cutoff)"
           }
 
+          # 판단 실행에는 gh aw 가 진단용 아티팩트를 여럿 남긴다 - 프롬프트, 에이전트
+          # 로그, 출력 검사 로그. 거기엔 그 환자의 진료 내용이 섞여 있을 수 있고,
+          # 실습에서 볼 일도 없다. 보고서만 남기고 지운다.
+          # 끝난 실행만 건드린다 - 도는 중에 지우면 뒤 잡이 그 파일을 잃는다.
+          prune_artifacts() {
+            n=0
+            runs=$(gh api --paginate \
+                     "repos/$GITHUB_REPOSITORY/actions/workflows/billing-review.lock.yml/runs?per_page=50" \
+                     --jq '.workflow_runs[] | select(.status == "completed") | .id' 2>/dev/null || true)
+            for run in $runs; do
+              arts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" \
+                       --jq '.artifacts[] | select(.expired == false)
+                             | select(.name != "billing-report") | .id' 2>/dev/null || true)
+              for a in $arts; do
+                if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$a" >/dev/null 2>&1; then
+                  n=$((n + 1))
+                fi
+              done
+            done
+            printf '| %s | %s | %d개\n' "진단 아티팩트 (보고서만 남김)" "-" "$n" >> "$RUNNER_TEMP/swept.md"
+            echo "진단 아티팩트 $n개 지움"
+          }
+
           MINUTES=$(printf '%s' "${OLDER_THAN:-}" | grep -oE '^[0-9]+$' || true)
           MINUTES="${MINUTES:-30}"
           INTAKE_CUT=$(date -u -d "$MINUTES minutes ago" +%Y-%m-%dT%H:%M:%SZ)
@@ -68,6 +91,7 @@ jobs:
           : > "$RUNNER_TEMP/swept.md"
           sweep "billing-intake.yml"       "$INTAKE_CUT" "요청 (환자 ID)"
           sweep "billing-review.lock.yml"  "$REVIEW_CUT" "판단 (비식별 진료행·보고서)"
+          prune_artifacts
 
           {
             echo "## 요청 기록을 만료시켰습니다"
