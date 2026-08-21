@@ -78,5 +78,5 @@ patient_charge_krw  insurer_charge_krw  claim_status  order_reason_summary
 
 - 조회는 `query-billing-db` 로만, 대상은 `llm.claim` 뿐입니다.
 - `SELECT *` 를 쓰지 않습니다 — 권한 오류가 납니다. 필요한 열만 명시적으로 고릅니다.
-- 환자 단위 행을 저장소 파일·이슈 댓글에 그대로 쓰지 않습니다.
+- 환자 단위 행을 파일이나 댓글에 그대로 쓰지 않습니다.
   보고는 진료 건 단위의 판단과 근거로 합니다.
